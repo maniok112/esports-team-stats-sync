@@ -9,8 +9,6 @@ import Index from "./pages/Index";
 import PlayerProfile from "./pages/PlayerProfile";
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
-import { useEffect } from "react";
-import { toast } from "sonner";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,22 +20,6 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
-  useEffect(() => {
-    // Check for Supabase environment variables
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
-    if (!supabaseUrl || !supabaseAnonKey) {
-      toast.warning(
-        "Supabase configuration missing", 
-        {
-          description: "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Supabase project settings.",
-          duration: 10000,
-        }
-      );
-    }
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
