@@ -1,10 +1,10 @@
-import { Player, Match, PlayerStats, ChampionStats, TeamStats } from '../types/league';
-import supabase from './supabaseClient';
+import { Player, Match, PlayerStats, TeamStats } from '../types/league';
+import { supabase } from '@/integrations/supabase/client';
 
-// Funkcja do pobierania zespołu z Supabase
+// Function to fetch team from Supabase
 export const fetchTeam = async (): Promise<TeamStats> => {
   try {
-    // Pobierz dane zespołu
+    // Fetch team stats
     const { data: teamData, error: teamError } = await supabase
       .from('team_stats')
       .select('*')
@@ -12,7 +12,7 @@ export const fetchTeam = async (): Promise<TeamStats> => {
     
     if (teamError) throw teamError;
     
-    // Pobierz graczy zespołu
+    // Fetch players
     const { data: playersData, error: playersError } = await supabase
       .from('players')
       .select('*')
@@ -22,9 +22,9 @@ export const fetchTeam = async (): Promise<TeamStats> => {
     
     return {
       players: playersData,
-      totalWins: teamData?.totalWins || 0,
-      totalLosses: teamData?.totalLosses || 0,
-      winRate: teamData?.winRate
+      totalWins: teamData?.total_wins || 0,
+      totalLosses: teamData?.total_losses || 0,
+      winRate: teamData?.win_rate
     };
   } catch (error) {
     console.error('Error fetching team data:', error);
@@ -34,7 +34,7 @@ export const fetchTeam = async (): Promise<TeamStats> => {
   }
 };
 
-// Funkcja do pobierania graczy z Supabase
+// Function to fetch a player from Supabase
 export const fetchPlayer = async (playerId: string): Promise<Player | undefined> => {
   try {
     const { data, error } = await supabase
@@ -53,10 +53,10 @@ export const fetchPlayer = async (playerId: string): Promise<Player | undefined>
   }
 };
 
-// Funkcja do pobierania statystyk graczy z Supabase
+// Function to fetch player stats from Supabase
 export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | undefined> => {
   try {
-    // Pobierz podstawowe statystyki
+    // Fetch basic stats
     const { data: statsData, error: statsError } = await supabase
       .from('player_stats')
       .select('*')
@@ -65,7 +65,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     
     if (statsError) throw statsError;
     
-    // Pobierz informacje o graczu
+    // Fetch player info
     const { data: playerData, error: playerError } = await supabase
       .from('players')
       .select('*')
@@ -74,7 +74,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     
     if (playerError) throw playerError;
     
-    // Pobierz ostatnie mecze
+    // Fetch recent matches
     const { data: matchesData, error: matchesError } = await supabase
       .from('matches')
       .select('*')
@@ -84,7 +84,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     
     if (matchesError) throw matchesError;
     
-    // Pobierz statystyki championów
+    // Fetch champion stats
     const { data: championsData, error: championsError } = await supabase
       .from('champion_stats')
       .select('*')
@@ -94,21 +94,21 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     if (championsError) throw championsError;
     
     return {
-      summonerName: playerData.summonerName,
+      summonerName: playerData.summoner_name,
       tier: playerData.tier,
       rank: playerData.rank,
-      leaguePoints: playerData.leaguePoints,
+      leaguePoints: playerData.league_points,
       wins: playerData.wins,
       losses: playerData.losses,
-      winRate: statsData?.winRate,
-      avgKills: statsData?.avgKills,
-      avgDeaths: statsData?.avgDeaths,
-      avgAssists: statsData?.avgAssists,
-      avgKDA: statsData?.avgKDA,
-      avgCsPerMin: statsData?.avgCsPerMin,
+      winRate: statsData?.win_rate,
+      avgKills: statsData?.avg_kills,
+      avgDeaths: statsData?.avg_deaths,
+      avgAssists: statsData?.avg_assists,
+      avgKDA: statsData?.avg_kda,
+      avgCsPerMin: statsData?.avg_cs_per_min,
       recentMatches: matchesData || [],
       championStats: championsData || [],
-      rolesPlayed: statsData?.rolesPlayed
+      rolesPlayed: statsData?.roles_played
     };
   } catch (error) {
     console.error(`Error fetching player stats for ${playerId}:`, error);
@@ -118,10 +118,10 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
   }
 };
 
-// Funkcja do pobierania statystyk wszystkich graczy
+// Function to fetch all player stats
 export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
   try {
-    // Pobierz wszystkich graczy
+    // Fetch all players
     const { data: players, error: playersError } = await supabase
       .from('players')
       .select('id');
@@ -130,7 +130,7 @@ export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>
     
     const result: Record<string, PlayerStats> = {};
     
-    // Dla każdego gracza pobierz jego statystyki
+    // Fetch stats for each player
     for (const player of players) {
       const stats = await fetchPlayerStats(player.id);
       if (stats) {
@@ -147,14 +147,37 @@ export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>
   }
 };
 
-// Funkcja do synchronizacji danych z Riot API
+// Function to sync with Riot API
 export const syncWithRiotApi = async (summonerName: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const { data, error } = await supabase
-      .rpc('sync_riot_data', { summonerName });
+    // First sync the summoner data
+    const summonerResponse = await supabase.functions.invoke('riot-api', {
+      body: { 
+        action: 'syncSummoner',
+        summonerName
+      }
+    });
     
-    if (error) throw error;
-    return data || { success: false, message: 'Unknown error occurred' };
+    if (!summonerResponse.data.success) {
+      throw new Error(summonerResponse.data.message || 'Failed to sync summoner data');
+    }
+    
+    // Then sync the match history
+    const matchesResponse = await supabase.functions.invoke('riot-api', {
+      body: { 
+        action: 'syncMatches',
+        summonerName
+      }
+    });
+    
+    if (!matchesResponse.data.success) {
+      throw new Error(matchesResponse.data.message || 'Failed to sync match history');
+    }
+    
+    return { 
+      success: true, 
+      message: 'Successfully synchronized data from Riot API'
+    };
   } catch (error) {
     console.error('Error syncing with Riot API:', error);
     return { 
@@ -164,14 +187,42 @@ export const syncWithRiotApi = async (summonerName: string): Promise<{ success: 
   }
 };
 
-// Funkcja do importu danych z CSV
+// Function to import data from CSV
 export const importCsvData = async (csvData: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const { data, error } = await supabase
-      .rpc('import_csv_data', { csv_data: csvData });
+    // Process the CSV data
+    const lines = csvData.trim().split('\n');
+    const headers = lines[0].split(',');
+    
+    // Extract player data from CSV
+    const players = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',');
+      if (values.length !== headers.length) continue;
+      
+      const player = {};
+      headers.forEach((header, index) => {
+        player[header.trim()] = values[index].trim();
+      });
+      
+      players.push(player);
+    }
+    
+    if (players.length === 0) {
+      return { success: false, message: 'No valid players found in CSV data' };
+    }
+    
+    // Insert players into the database
+    const { error } = await supabase
+      .from('players')
+      .insert(players);
     
     if (error) throw error;
-    return data || { success: false, message: 'Unknown error occurred' };
+    
+    return { 
+      success: true, 
+      message: `Successfully imported ${players.length} players from CSV`
+    };
   } catch (error) {
     console.error('Error importing CSV data:', error);
     return { 
@@ -181,7 +232,7 @@ export const importCsvData = async (csvData: string): Promise<{ success: boolean
   }
 };
 
-// ---- Funkcje fallbackowe dla zachowania kompatybilności ----
+// ---- Fallback functions for compatibility ----
 
 // Poniżej miejsce na funkcje fallbackowe, które używają symulowanych danych
 // w przypadku, gdy dane nie są jeszcze dostępne w Supabase
