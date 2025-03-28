@@ -8,6 +8,7 @@ import Layout from "./pages/Layout";
 import Index from "./pages/Index";
 import PlayerProfile from "./pages/PlayerProfile";
 import NotFound from "./pages/NotFound";
+import Admin from "./pages/Admin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/" element={<Layout />}>
             <Route index element={<Index />} />
             <Route path="player/:playerId" element={<PlayerProfile />} />
+            <Route path="admin" element={<Admin />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

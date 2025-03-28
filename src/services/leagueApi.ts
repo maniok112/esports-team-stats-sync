@@ -1,5 +1,190 @@
-
 import { Player, Match, PlayerStats, ChampionStats, TeamStats } from '../types/league';
+import supabase from './supabaseClient';
+
+// Funkcja do pobierania zespołu z Supabase
+export const fetchTeam = async (): Promise<TeamStats> => {
+  try {
+    // Pobierz dane zespołu
+    const { data: teamData, error: teamError } = await supabase
+      .from('team_stats')
+      .select('*')
+      .single();
+    
+    if (teamError) throw teamError;
+    
+    // Pobierz graczy zespołu
+    const { data: playersData, error: playersError } = await supabase
+      .from('players')
+      .select('*')
+      .order('role');
+    
+    if (playersError) throw playersError;
+    
+    return {
+      players: playersData,
+      totalWins: teamData?.totalWins || 0,
+      totalLosses: teamData?.totalLosses || 0,
+      winRate: teamData?.winRate
+    };
+  } catch (error) {
+    console.error('Error fetching team data:', error);
+    
+    // Fallback to mock data if there's an error or no data in Supabase yet
+    return fallbackToMockTeamData();
+  }
+};
+
+// Funkcja do pobierania graczy z Supabase
+export const fetchPlayer = async (playerId: string): Promise<Player | undefined> => {
+  try {
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', playerId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error(`Error fetching player ${playerId}:`, error);
+    
+    // Fallback to mock data if there's an error
+    return fallbackToMockPlayer(playerId);
+  }
+};
+
+// Funkcja do pobierania statystyk graczy z Supabase
+export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | undefined> => {
+  try {
+    // Pobierz podstawowe statystyki
+    const { data: statsData, error: statsError } = await supabase
+      .from('player_stats')
+      .select('*')
+      .eq('player_id', playerId)
+      .single();
+    
+    if (statsError) throw statsError;
+    
+    // Pobierz informacje o graczu
+    const { data: playerData, error: playerError } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', playerId)
+      .single();
+    
+    if (playerError) throw playerError;
+    
+    // Pobierz ostatnie mecze
+    const { data: matchesData, error: matchesError } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('player_id', playerId)
+      .order('timestamp', { ascending: false })
+      .limit(15);
+    
+    if (matchesError) throw matchesError;
+    
+    // Pobierz statystyki championów
+    const { data: championsData, error: championsError } = await supabase
+      .from('champion_stats')
+      .select('*')
+      .eq('player_id', playerId)
+      .order('games', { ascending: false });
+    
+    if (championsError) throw championsError;
+    
+    return {
+      summonerName: playerData.summonerName,
+      tier: playerData.tier,
+      rank: playerData.rank,
+      leaguePoints: playerData.leaguePoints,
+      wins: playerData.wins,
+      losses: playerData.losses,
+      winRate: statsData?.winRate,
+      avgKills: statsData?.avgKills,
+      avgDeaths: statsData?.avgDeaths,
+      avgAssists: statsData?.avgAssists,
+      avgKDA: statsData?.avgKDA,
+      avgCsPerMin: statsData?.avgCsPerMin,
+      recentMatches: matchesData || [],
+      championStats: championsData || [],
+      rolesPlayed: statsData?.rolesPlayed
+    };
+  } catch (error) {
+    console.error(`Error fetching player stats for ${playerId}:`, error);
+    
+    // Fallback to mock data if there's an error
+    return fallbackToMockPlayerStats(playerId);
+  }
+};
+
+// Funkcja do pobierania statystyk wszystkich graczy
+export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
+  try {
+    // Pobierz wszystkich graczy
+    const { data: players, error: playersError } = await supabase
+      .from('players')
+      .select('id');
+    
+    if (playersError) throw playersError;
+    
+    const result: Record<string, PlayerStats> = {};
+    
+    // Dla każdego gracza pobierz jego statystyki
+    for (const player of players) {
+      const stats = await fetchPlayerStats(player.id);
+      if (stats) {
+        result[player.id] = stats;
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error fetching all player stats:', error);
+    
+    // Fallback to mock data if there's an error
+    return fallbackToMockAllPlayerStats();
+  }
+};
+
+// Funkcja do synchronizacji danych z Riot API
+export const syncWithRiotApi = async (summonerName: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const { data, error } = await supabase
+      .rpc('sync_riot_data', { summonerName });
+    
+    if (error) throw error;
+    return data || { success: false, message: 'Unknown error occurred' };
+  } catch (error) {
+    console.error('Error syncing with Riot API:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+};
+
+// Funkcja do importu danych z CSV
+export const importCsvData = async (csvData: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const { data, error } = await supabase
+      .rpc('import_csv_data', { csv_data: csvData });
+    
+    if (error) throw error;
+    return data || { success: false, message: 'Unknown error occurred' };
+  } catch (error) {
+    console.error('Error importing CSV data:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+};
+
+// ---- Funkcje fallbackowe dla zachowania kompatybilności ----
+
+// Poniżej miejsce na funkcje fallbackowe, które używają symulowanych danych
+// w przypadku, gdy dane nie są jeszcze dostępne w Supabase
 
 // Simulated data for development, we'll replace with actual API calls later
 const MOCK_PLAYERS: Player[] = [
@@ -64,6 +249,37 @@ const MOCK_PLAYERS: Player[] = [
     losses: 80
   }
 ];
+
+function fallbackToMockTeamData(): TeamStats {
+  return {
+    players: MOCK_PLAYERS,
+    totalWins: MOCK_PLAYERS.reduce((sum, player) => sum + (player.wins || 0), 0),
+    totalLosses: MOCK_PLAYERS.reduce((sum, player) => sum + (player.losses || 0), 0)
+  };
+}
+
+function fallbackToMockPlayer(playerId: string): Player | undefined {
+  return MOCK_PLAYERS.find(player => player.id === playerId);
+}
+
+function fallbackToMockPlayerStats(playerId: string): PlayerStats | undefined {
+  const player = MOCK_PLAYERS.find(p => p.id === playerId);
+  if (!player) return undefined;
+  
+  const matches = generateMatches(playerId);
+  return calculatePlayerStats(player, matches);
+}
+
+function fallbackToMockAllPlayerStats(): Record<string, PlayerStats> {
+  const result: Record<string, PlayerStats> = {};
+  
+  for (const player of MOCK_PLAYERS) {
+    const matches = generateMatches(player.id);
+    result[player.id] = calculatePlayerStats(player, matches);
+  }
+  
+  return result;
+}
 
 // Generate random matches for each player
 const generateMatches = (playerId: string): Match[] => {
@@ -226,64 +442,3 @@ const calculatePlayerStats = (player: Player, matches: Match[]): PlayerStats => 
     championStats
   };
 };
-
-export const fetchTeam = async (): Promise<TeamStats> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  const playerMatchesMap: Record<string, Match[]> = {};
-  MOCK_PLAYERS.forEach(player => {
-    playerMatchesMap[player.id] = generateMatches(player.id);
-  });
-  
-  return {
-    players: MOCK_PLAYERS,
-    totalWins: MOCK_PLAYERS.reduce((sum, player) => sum + (player.wins || 0), 0),
-    totalLosses: MOCK_PLAYERS.reduce((sum, player) => sum + (player.losses || 0), 0)
-  };
-};
-
-export const fetchPlayer = async (playerId: string): Promise<Player | undefined> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  return MOCK_PLAYERS.find(player => player.id === playerId);
-};
-
-export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | undefined> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-  
-  const player = MOCK_PLAYERS.find(p => p.id === playerId);
-  if (!player) return undefined;
-  
-  const matches = generateMatches(playerId);
-  return calculatePlayerStats(player, matches);
-};
-
-export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  const result: Record<string, PlayerStats> = {};
-  
-  for (const player of MOCK_PLAYERS) {
-    const matches = generateMatches(player.id);
-    result[player.id] = calculatePlayerStats(player, matches);
-  }
-  
-  return result;
-};
-
-// For real implementation we would connect to the Riot API
-// Example: https://developer.riotgames.com/apis
-/*
-export const fetchRankedData = async (summonerId: string, region = 'euw1') => {
-  const apiKey = process.env.RIOT_API_KEY;
-  const url = `https://${region}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}?api_key=${apiKey}`;
-  
-  const response = await fetch(url);
-  const data = await response.json();
-  return data;
-};
-*/
