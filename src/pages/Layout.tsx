@@ -16,6 +16,7 @@ export const Layout = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
+        {/* Fixed TeamSidebar props */}
         <TeamSidebar players={team?.players || []} isLoading={isLoading} />
         <main className="flex-1 p-6">
           <div className="flex justify-end mb-4">
