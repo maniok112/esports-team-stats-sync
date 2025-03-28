@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { syncWithRiotApi, importCsvData } from '@/services/leagueApi';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, FileSpreadsheet, Loader2, RefreshCw, UserCog } from 'lucide-react';
+import PlayerEditForm from '@/components/PlayerEditForm';
+import PlayerSelector from '@/components/PlayerSelector';
 
 interface SyncFormData {
   summonerName: string;
@@ -25,6 +27,7 @@ const Admin = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
 
   const syncForm = useForm<SyncFormData>({
     defaultValues: {
@@ -155,11 +158,43 @@ const Admin = () => {
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="sync" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+      <Tabs defaultValue="players" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="players">Edycja graczy</TabsTrigger>
           <TabsTrigger value="sync">Synchronizacja z Riot API</TabsTrigger>
           <TabsTrigger value="import">Import danych</TabsTrigger>
         </TabsList>
+        
+        <TabsContent value="players">
+          <Card>
+            <CardHeader>
+              <CardTitle>Edycja graczy</CardTitle>
+              <CardDescription>
+                Edytuj dane graczy, dodawaj zdjęcia profilowe i synchronizuj z Riot API
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <PlayerSelector 
+                onSelectPlayer={setSelectedPlayerId} 
+                selectedPlayerId={selectedPlayerId} 
+              />
+              
+              {selectedPlayerId ? (
+                <PlayerEditForm 
+                  playerId={selectedPlayerId} 
+                  onSuccess={() => {
+                    // Refresh could be added here if needed
+                  }} 
+                />
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <UserCog className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Wybierz gracza z listy, aby edytować jego dane</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
         
         <TabsContent value="sync">
           <Card>
