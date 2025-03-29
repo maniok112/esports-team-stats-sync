@@ -1,5 +1,6 @@
+
 {
-  "action": "syncSummoner",
-  "summonerName": "mdou#天04",
-  "region": "EUW"
+  "action": "populatePlayerStats",
+  "playerId": "9c424be9-e357-432c-a5de-68dc4c71e0d8",
+  "summonerName": "mdou#天04"
 }

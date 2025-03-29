@@ -24,7 +24,6 @@ function isValidRole(role: string): boolean {
 // Properly encode Riot ID for API requests
 function encodeRiotId(summonerName: string): string {
   // If the summonerName contains a '#', we need to handle it specially
-  // Riot API uses URI component encoding for the tagline after the #
   if (summonerName.includes('#')) {
     const [name, tagLine] = summonerName.split('#');
     return `${encodeURIComponent(name)}/${encodeURIComponent(tagLine)}`;
@@ -50,9 +49,9 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
       apiEndpoint = `https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodedName}`;
       console.log(`Using Riot ID API endpoint: ${apiEndpoint}`);
     } else {
-      // Use legacy summoner name endpoint
+      // Use legacy summoner name endpoint (only for EUW1)
       encodedName = encodeURIComponent(summonerName);
-      apiEndpoint = `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
+      apiEndpoint = `https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
       console.log(`Using legacy summoner name API endpoint: ${apiEndpoint}`);
     }
     
@@ -80,47 +79,32 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     let summonerId, summonerData;
     
     if (isRiotId) {
-      // Get summoner data using PUUID from a specific region (EUN1 in this case)
-      // We need to try multiple regions since the account API doesn't specify which region the player is in
-      const regions = ["eun1", "euw1", "na1", "kr"];
-      let summonerByPuuidResponse = null;
-      let foundRegion = null;
+      // Get summoner data using PUUID from EUW1 region only
+      const region = "euw1";
       
-      for (const region of regions) {
-        try {
-          console.log(`Trying to fetch summoner data from region: ${region} for PUUID: ${accountData.puuid}`);
-          const response = await fetch(
-            `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
-            {
-              headers: {
-                "X-Riot-Token": riotApiKey,
-              },
-            }
-          );
-          
-          if (response.ok) {
-            summonerByPuuidResponse = response;
-            foundRegion = region;
-            console.log(`Found summoner in region: ${foundRegion}`);
-            break;
-          } else {
-            console.log(`Summoner not found in region: ${region}, status: ${response.status}`);
-          }
-        } catch (err) {
-          console.error(`Error checking region ${region}:`, err);
+      console.log(`Trying to fetch summoner data from region: ${region} for PUUID: ${accountData.puuid}`);
+      const response = await fetch(
+        `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
+        {
+          headers: {
+            "X-Riot-Token": riotApiKey,
+          },
         }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`API Error: ${response.status} ${response.statusText}`);
+        console.error(`Response body: ${errorText}`);
+        throw new Error(`Failed to fetch summoner by PUUID: ${response.status} ${response.statusText}`);
       }
       
-      if (!summonerByPuuidResponse || !foundRegion) {
-        throw new Error(`Could not find summoner in any region for PUUID: ${accountData.puuid}`);
-      }
-      
-      summonerData = await summonerByPuuidResponse.json();
+      summonerData = await response.json();
       summonerId = summonerData.id;
       
       // Fetch ranked data from the found region
       const rankedResponse = await fetch(
-        `https://${foundRegion}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
+        `https://${region}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
         {
           headers: {
             "X-Riot-Token": riotApiKey,
@@ -145,7 +129,7 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
         profileIconId: summonerData.profileIconId,
         summonerLevel: summonerData.summonerLevel,
         puuid: accountData.puuid,
-        region: foundRegion,
+        region: region,
         tier: soloQueueEntry?.tier || null,
         rank: soloQueueEntry?.rank || null,
         leaguePoints: soloQueueEntry?.leaguePoints || 0,
@@ -157,9 +141,9 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
       summonerData = accountData;
       summonerId = summonerData.id;
       
-      // Fetch ranked data using the summoner ID from EUN1 (for legacy names)
+      // Fetch ranked data using the summoner ID from EUW1 (for legacy names)
       const rankedResponse = await fetch(
-        `https://eun1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
+        `https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
         {
           headers: {
             "X-Riot-Token": riotApiKey,
@@ -184,7 +168,7 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
         profileIconId: summonerData.profileIconId,
         summonerLevel: summonerData.summonerLevel,
         puuid: summonerData.puuid,
-        region: "eun1", // Default for legacy summoner name
+        region: "euw1", // Default for legacy summoner name
         tier: soloQueueEntry?.tier || null,
         rank: soloQueueEntry?.rank || null,
         leaguePoints: soloQueueEntry?.leaguePoints || 0,
@@ -362,6 +346,7 @@ async function syncSummonerWithRiotApi(summonerName: string) {
           league_points: riotData.leaguePoints,
           wins: riotData.wins,
           losses: riotData.losses,
+          profile_image_url: null,
         })
         .select()
         .single();
