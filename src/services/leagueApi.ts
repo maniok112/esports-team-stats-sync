@@ -1,7 +1,5 @@
-import { Player, Match, PlayerStats, TeamStats } from '../types/league';
+import { Player, Match, PlayerStats, TeamStats, ChampionStats } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
-
-const RIOT_API_KEY = 'RGAPI-4b4aaede-7f1a-4f0d-94c4-14e561b15a41';
 
 // Function to fetch team from Supabase
 export const fetchTeam = async (): Promise<TeamStats> => {
@@ -23,10 +21,10 @@ export const fetchTeam = async (): Promise<TeamStats> => {
     if (playersError) throw playersError;
     
     return {
-      players: playersData,
+      players: playersData || [],
       totalWins: teamData?.total_wins || 0,
       totalLosses: teamData?.total_losses || 0,
-      winRate: teamData?.win_rate
+      winRate: teamData?.win_rate || 0
     };
   } catch (error) {
     console.error('Error fetching team data:', error);
@@ -58,7 +56,10 @@ export const fetchPlayer = async (playerId: string): Promise<Player | undefined>
 // Function to fetch player stats from Supabase
 export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | null> => {
   try {
-    const { data: statsData, error: statsError, status } = await supabase
+    console.log(`Fetching player stats for player_id: ${playerId}`);
+    
+    // Get player stats
+    const { data: statsData, error: statsError } = await supabase
       .from('player_stats')
       .select('*')
       .eq('player_id', playerId)
@@ -66,100 +67,62 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
 
     if (statsError) {
       console.error(`Error fetching player stats for player_id: ${playerId}`, statsError);
-      if (status === 406) {
-        console.error(`RLS policy issue or no rows found for player_stats with player_id: ${playerId}`);
+      if (statsError.code === 'PGRST116') {
+        console.log('No player stats found, will return null');
         return null;
       }
       throw statsError;
     }
 
     if (!statsData) {
-      console.warn(`No rows found for player_stats with player_id: ${playerId}`);
+      console.log(`No player stats found for player_id: ${playerId}`);
       return null;
     }
 
-    return statsData;
+    // Get recent matches
+    const { data: matches, error: matchesError } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('player_id', playerId)
+      .order('timestamp', { ascending: false })
+      .limit(15);
+
+    if (matchesError) {
+      console.error(`Error fetching matches for player_id: ${playerId}`, matchesError);
+      throw matchesError;
+    }
+
+    // Get champion stats
+    const { data: championStats, error: championStatsError } = await supabase
+      .from('champion_stats')
+      .select('*')
+      .eq('player_id', playerId)
+      .order('games', { ascending: false });
+
+    if (championStatsError) {
+      console.error(`Error fetching champion stats for player_id: ${playerId}`, championStatsError);
+      throw championStatsError;
+    }
+
+    // Combine all data
+    const playerStats: PlayerStats = {
+      ...statsData,
+      recentMatches: matches || [],
+      championStats: championStats || []
+    };
+
+    return playerStats;
   } catch (error) {
     console.error(`Unhandled error fetching player stats for player_id: ${playerId}`, error);
     return null;
   }
 };
 
-// Function to fetch all player stats
-export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
-  try {
-    // Fetch all players
-    const { data: players, error: playersError } = await supabase
-      .from('players')
-      .select('id');
-    
-    if (playersError) throw playersError;
-    
-    const result: Record<string, PlayerStats> = {};
-    
-    // Fetch stats for each player
-    for (const player of players) {
-      const stats = await fetchPlayerStats(player.id);
-      if (stats) {
-        result[player.id] = stats;
-      }
-    }
-    
-    return result;
-  } catch (error) {
-    console.error('Error fetching all player stats:', error);
-    
-    // Fallback to mock data if there's an error
-    return fallbackToMockAllPlayerStats();
-  }
-};
-
-// Function to sync with Riot API
-export const syncWithRiotApi = async (summonerName: string): Promise<{ success: boolean; message: string }> => {
-  try {
-    // First sync the summoner data
-    const summonerResponse = await supabase.functions.invoke('riot-api', {
-      body: { 
-        action: 'syncSummoner',
-        summonerName,
-        apiKey: RIOT_API_KEY
-      }
-    });
-    
-    if (!summonerResponse.data.success) {
-      throw new Error(summonerResponse.data.message || 'Failed to sync summoner data');
-    }
-    
-    // Then sync the match history
-    const matchesResponse = await supabase.functions.invoke('riot-api', {
-      body: { 
-        action: 'syncMatches',
-        summonerName,
-        apiKey: RIOT_API_KEY
-      }
-    });
-    
-    if (!matchesResponse.data.success) {
-      throw new Error(matchesResponse.data.message || 'Failed to sync match history');
-    }
-    
-    return { 
-      success: true, 
-      message: 'Successfully synchronized data from Riot API'
-    };
-  } catch (error) {
-    console.error('Error syncing with Riot API:', error);
-    return { 
-      success: false, 
-      message: error instanceof Error ? error.message : 'Unknown error occurred'
-    };
-  }
-};
-
 // Function to sync player stats
 export const syncPlayerStats = async (playerId: string, summonerName: string): Promise<void> => {
   try {
-    console.log(`Invoking syncPlayerStats for playerId: ${playerId}, summonerName: ${summonerName}`);
+    console.log(`Syncing player stats for player_id: ${playerId}, summonerName: ${summonerName}`);
+    
     const { data, error } = await supabase.functions.invoke('riot-api', {
       body: {
         action: 'populatePlayerStats',
@@ -182,51 +145,6 @@ export const syncPlayerStats = async (playerId: string, summonerName: string): P
   } catch (error) {
     console.error('Error syncing player stats:', error);
     throw error;
-  }
-};
-
-// Function to import data from CSV
-export const importCsvData = async (csvData: string): Promise<{ success: boolean; message: string }> => {
-  try {
-    // Process the CSV data
-    const lines = csvData.trim().split('\n');
-    const headers = lines[0].split(',');
-    
-    // Extract player data from CSV
-    const players = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',');
-      if (values.length !== headers.length) continue;
-      
-      const player = {};
-      headers.forEach((header, index) => {
-        player[header.trim()] = values[index].trim();
-      });
-      
-      players.push(player);
-    }
-    
-    if (players.length === 0) {
-      return { success: false, message: 'No valid players found in CSV data' };
-    }
-    
-    // Insert players into the database
-    const { error } = await supabase
-      .from('players')
-      .insert(players);
-    
-    if (error) throw error;
-    
-    return { 
-      success: true, 
-      message: `Successfully imported ${players.length} players from CSV`
-    };
-  } catch (error) {
-    console.error('Error importing CSV data:', error);
-    return { 
-      success: false, 
-      message: error instanceof Error ? error.message : 'Unknown error occurred'
-    };
   }
 };
 
@@ -302,7 +220,8 @@ function fallbackToMockTeamData(): TeamStats {
   return {
     players: MOCK_PLAYERS,
     totalWins: MOCK_PLAYERS.reduce((sum, player) => sum + (player.wins || 0), 0),
-    totalLosses: MOCK_PLAYERS.reduce((sum, player) => sum + (player.losses || 0), 0)
+    totalLosses: MOCK_PLAYERS.reduce((sum, player) => sum + (player.losses || 0), 0),
+    winRate: 0
   };
 }
 
@@ -310,21 +229,11 @@ function fallbackToMockPlayer(playerId: string): Player | undefined {
   return MOCK_PLAYERS.find(player => player.id === playerId);
 }
 
-function fallbackToMockPlayerStats(playerId: string): PlayerStats | undefined {
+function fallbackToMockPlayerStats(playerId: string): PlayerStats | null {
   const player = MOCK_PLAYERS.find(p => p.id === playerId);
-  if (!player) return undefined;
+  if (!player) return null;
   const matches = generateMatches(playerId);
   return calculatePlayerStats(player, matches);
-}
-
-function fallbackToMockAllPlayerStats(): Record<string, PlayerStats> {
-  const result: Record<string, PlayerStats> = {};
-  
-  for (const player of MOCK_PLAYERS) {
-    const matches = generateMatches(player.id);
-    result[player.id] = calculatePlayerStats(player, matches);
-  }
-  return result;
 }
 
 // Generate random matches for each player

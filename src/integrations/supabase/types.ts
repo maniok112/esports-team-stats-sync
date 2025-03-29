@@ -9,7 +9,270 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      champion_stats: {
+        Row: {
+          assists: number | null
+          champion_id: number
+          champion_name: string
+          created_at: string | null
+          cs_per_min: number | null
+          deaths: number | null
+          games: number | null
+          id: string
+          kda: number | null
+          kills: number | null
+          losses: number | null
+          player_id: string | null
+          updated_at: string | null
+          win_rate: number | null
+          wins: number | null
+        }
+        Insert: {
+          assists?: number | null
+          champion_id: number
+          champion_name: string
+          created_at?: string | null
+          cs_per_min?: number | null
+          deaths?: number | null
+          games?: number | null
+          id?: string
+          kda?: number | null
+          kills?: number | null
+          losses?: number | null
+          player_id?: string | null
+          updated_at?: string | null
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Update: {
+          assists?: number | null
+          champion_id?: number
+          champion_name?: string
+          created_at?: string | null
+          cs_per_min?: number | null
+          deaths?: number | null
+          games?: number | null
+          id?: string
+          kda?: number | null
+          kills?: number | null
+          losses?: number | null
+          player_id?: string | null
+          updated_at?: string | null
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "champion_stats_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          assists: number | null
+          champion: string
+          champion_id: number
+          created_at: string | null
+          cs: number | null
+          cs_per_min: number | null
+          deaths: number | null
+          duration: number | null
+          game_id: string
+          gold: number | null
+          id: string
+          kda: number | null
+          kills: number | null
+          player_id: string | null
+          result: string
+          role: string | null
+          timestamp: number | null
+          updated_at: string | null
+          vision: number | null
+        }
+        Insert: {
+          assists?: number | null
+          champion: string
+          champion_id: number
+          created_at?: string | null
+          cs?: number | null
+          cs_per_min?: number | null
+          deaths?: number | null
+          duration?: number | null
+          game_id: string
+          gold?: number | null
+          id?: string
+          kda?: number | null
+          kills?: number | null
+          player_id?: string | null
+          result: string
+          role?: string | null
+          timestamp?: number | null
+          updated_at?: string | null
+          vision?: number | null
+        }
+        Update: {
+          assists?: number | null
+          champion?: string
+          champion_id?: number
+          created_at?: string | null
+          cs?: number | null
+          cs_per_min?: number | null
+          deaths?: number | null
+          duration?: number | null
+          game_id?: string
+          gold?: number | null
+          id?: string
+          kda?: number | null
+          kills?: number | null
+          player_id?: string | null
+          result?: string
+          role?: string | null
+          timestamp?: number | null
+          updated_at?: string | null
+          vision?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_stats: {
+        Row: {
+          avg_assists: number | null
+          avg_cs_per_min: number | null
+          avg_deaths: number | null
+          avg_kda: number | null
+          avg_kills: number | null
+          created_at: string | null
+          id: string
+          player_id: string | null
+          roles_played: Json | null
+          updated_at: string | null
+          win_rate: number | null
+        }
+        Insert: {
+          avg_assists?: number | null
+          avg_cs_per_min?: number | null
+          avg_deaths?: number | null
+          avg_kda?: number | null
+          avg_kills?: number | null
+          created_at?: string | null
+          id?: string
+          player_id?: string | null
+          roles_played?: Json | null
+          updated_at?: string | null
+          win_rate?: number | null
+        }
+        Update: {
+          avg_assists?: number | null
+          avg_cs_per_min?: number | null
+          avg_deaths?: number | null
+          avg_kda?: number | null
+          avg_kills?: number | null
+          created_at?: string | null
+          id?: string
+          player_id?: string | null
+          roles_played?: Json | null
+          updated_at?: string | null
+          win_rate?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_stats_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          created_at: string | null
+          id: string
+          league_points: number | null
+          losses: number | null
+          name: string
+          profile_icon_id: number | null
+          rank: string | null
+          role: string
+          summoner_id: string | null
+          summoner_name: string
+          tier: string | null
+          updated_at: string | null
+          wins: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          league_points?: number | null
+          losses?: number | null
+          name: string
+          profile_icon_id?: number | null
+          rank?: string | null
+          role: string
+          summoner_id?: string | null
+          summoner_name: string
+          tier?: string | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          league_points?: number | null
+          losses?: number | null
+          name?: string
+          profile_icon_id?: number | null
+          rank?: string | null
+          role?: string
+          summoner_id?: string | null
+          summoner_name?: string
+          tier?: string | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Relationships: []
+      }
+      team_stats: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          total_losses: number | null
+          total_wins: number | null
+          updated_at: string | null
+          win_rate: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          total_losses?: number | null
+          total_wins?: number | null
+          updated_at?: string | null
+          win_rate?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          total_losses?: number | null
+          total_wins?: number | null
+          updated_at?: string | null
+          win_rate?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

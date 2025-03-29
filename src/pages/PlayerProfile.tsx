@@ -1,19 +1,22 @@
-import React from 'react';
+
+import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchPlayer, fetchPlayerStats } from '@/services/leagueApi';
+import { fetchPlayer, fetchPlayerStats, syncPlayerStats } from '@/services/leagueApi';
 import { StatCard } from '@/components/StatCard';
 import { MatchHistoryCard } from '@/components/MatchHistoryCard';
 import { ChampionStatsCard } from '@/components/ChampionStatsCard';
 import { PerformanceGraph } from '@/components/PerformanceGraph';
+import { Button } from '@/components/ui/button';
 import { 
   Award, 
   Swords, 
   Shield, 
-  Zap, 
-  Target 
+  Target,
+  RefreshCcw 
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { toast } from 'sonner';
 
 const tierColors: Record<string, string> = {
   IRON: 'text-gray-400',
@@ -36,13 +39,31 @@ const PlayerProfile = () => {
     enabled: !!playerId
   });
   
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
     queryKey: ['playerStats', playerId],
-    queryFn: () => fetchPlayerStats(playerId || ''), // Wywołanie z poprawioną funkcją
+    queryFn: () => fetchPlayerStats(playerId || ''),
     enabled: !!playerId
   });
   
   const isLoading = playerLoading || statsLoading;
+
+  const handleSyncStats = async () => {
+    if (!player || !player.summoner_name) {
+      toast.error('Player does not have a summoner name set. Please update the player profile.');
+      return;
+    }
+
+    toast.info(`Syncing stats for ${player.name}...`);
+    
+    try {
+      await syncPlayerStats(playerId || '', player.summoner_name);
+      toast.success('Stats synchronized successfully!');
+      refetchStats();
+    } catch (error) {
+      console.error('Error syncing stats:', error);
+      toast.error('Failed to sync stats. Please try again later.');
+    }
+  };
   
   if (isLoading) {
     return (
@@ -60,10 +81,10 @@ const PlayerProfile = () => {
     );
   }
   
-  if (!player || !stats) {
+  if (!player) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        <p>Brak statystyk dla wybranego gracza. Spróbuj zsynchronizować dane z Riot API.</p>
+        <p>Player not found. Please check the URL and try again.</p>
       </div>
     );
   }
@@ -75,7 +96,7 @@ const PlayerProfile = () => {
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full overflow-hidden">
               <img 
-                src={`https://ddragon.leagueoflegends.com/cdn/13.9.1/img/profileicon/${player.profileIconId || 1}.png`} 
+                src={player.profile_image_url || `https://ddragon.leagueoflegends.com/cdn/13.9.1/img/profileicon/${player.profileIconId || 1}.png`} 
                 alt="Profile Icon"
                 className="w-full h-full object-cover"
               />
@@ -83,9 +104,11 @@ const PlayerProfile = () => {
             <div>
               <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                 {player.name}
-                <span className="text-muted-foreground text-sm font-normal">
-                  ({player.summonerName})
-                </span>
+                {player.summoner_name && (
+                  <span className="text-muted-foreground text-sm font-normal">
+                    ({player.summoner_name})
+                  </span>
+                )}
               </h1>
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">{player.role}</span>
@@ -98,48 +121,81 @@ const PlayerProfile = () => {
             </div>
           </div>
         </div>
+        
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={handleSyncStats}
+          disabled={!player.summoner_name}
+        >
+          <RefreshCcw className="mr-2 h-4 w-4" />
+          Sync Stats
+        </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard 
-          title="Win Rate" 
-          value={`${stats.winRate || 0}%`}
-          icon={<Award size={18} />}
-        />
-        <StatCard 
-          title="KDA Ratio" 
-          value={stats.avgKDA?.toFixed(2) || '0'}
-          icon={<Swords size={18} />}
-        />
-        <StatCard 
-          title="Avg. CS per min" 
-          value={stats.avgCsPerMin || '0'}
-          icon={<Target size={18} />}
-        />
-        <StatCard 
-          title="Win/Loss" 
-          value={`${stats.wins || 0}W ${stats.losses || 0}L`}
-          icon={<Shield size={18} />}
-          valueClassName=""
-        />
-      </div>
+      {!stats ? (
+        <div className="text-center py-8 bg-muted rounded-lg">
+          <p className="text-muted-foreground mb-4">
+            No stats available for this player. {player.summoner_name ? 'Try syncing stats from Riot API.' : 'Please add a summoner name to this player profile first.'}
+          </p>
+          
+          {player.summoner_name && (
+            <Button onClick={handleSyncStats}>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Sync Stats Now
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard 
+              title="Win Rate" 
+              value={`${stats.win_rate?.toFixed(1) || 0}%`}
+              icon={<Award size={18} />}
+            />
+            <StatCard 
+              title="KDA Ratio" 
+              value={(stats.avg_kda || 0).toFixed(2)}
+              icon={<Swords size={18} />}
+            />
+            <StatCard 
+              title="Avg. CS per min" 
+              value={(stats.avg_cs_per_min || 0).toFixed(1)}
+              icon={<Target size={18} />}
+            />
+            <StatCard 
+              title="Win/Loss" 
+              value={`${stats.wins || 0}W ${stats.losses || 0}L`}
+              icon={<Shield size={18} />}
+              valueClassName=""
+            />
+          </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <PerformanceGraph 
-          matches={stats.recentMatches} 
-          metric="kda" 
-          title="KDA Performance"
-        />
-        <PerformanceGraph 
-          matches={stats.recentMatches} 
-          metric="csPerMin" 
-          title="CS per Minute"
-        />
-      </div>
+          {stats.recentMatches && stats.recentMatches.length > 0 && (
+            <div className="grid gap-6 md:grid-cols-2">
+              <PerformanceGraph 
+                matches={stats.recentMatches} 
+                metric="kda" 
+                title="KDA Performance"
+              />
+              <PerformanceGraph 
+                matches={stats.recentMatches} 
+                metric="csPerMin" 
+                title="CS per Minute"
+              />
+            </div>
+          )}
 
-      <ChampionStatsCard championStats={stats.championStats} />
-      
-      <MatchHistoryCard matches={stats.recentMatches} />
+          {stats.championStats && stats.championStats.length > 0 && (
+            <ChampionStatsCard championStats={stats.championStats} />
+          )}
+          
+          {stats.recentMatches && stats.recentMatches.length > 0 && (
+            <MatchHistoryCard matches={stats.recentMatches} />
+          )}
+        </>
+      )}
     </div>
   );
 };

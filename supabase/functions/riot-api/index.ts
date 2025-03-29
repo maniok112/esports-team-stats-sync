@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.23.0";
 
@@ -26,7 +27,7 @@ serve(async (req) => {
 
   try {
     // Get the request data
-    const { action, summonerName, region = 'EUW' } = await req.json();
+    const { action, summonerName, playerId, region = 'EUW' } = await req.json();
     const regionCode = RIOT_API_REGIONS[region] || RIOT_API_REGIONS.EUW;
     
     if (!supabaseUrl || !supabaseKey) {
@@ -46,6 +47,8 @@ serve(async (req) => {
         return await syncSummonerData(summonerName, regionCode, supabase);
       case 'syncMatches':
         return await syncMatchHistory(summonerName, regionCode, supabase);
+      case 'populatePlayerStats':
+        return await populatePlayerStats(playerId, summonerName, regionCode, supabase);
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -64,7 +67,30 @@ serve(async (req) => {
   }
 });
 
-async function syncSummonerData(summonerName, region = 'EUW', supabase) {
+// Function to fetch summoner data from Riot API
+async function fetchSummonerDataFromRiotApi(summonerName, region) {
+  try {
+    console.log(`Fetching summoner data for ${summonerName} from region ${region}`);
+    const response = await fetch(
+      `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`,
+      { headers: { 'X-Riot-Token': RIOT_API_KEY } }
+    );
+
+    if (!response.ok) {
+      console.error(`Failed to fetch summoner data: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const summonerData = await response.json();
+    console.log('Summoner data fetched:', summonerData);
+    return summonerData;
+  } catch (error) {
+    console.error('Error fetching summoner data from Riot API:', error);
+    throw error;
+  }
+}
+
+async function syncSummonerData(summonerName, region, supabase) {
   try {
     console.log(`Starting sync for summoner: ${summonerName}, region: ${region}`);
 
@@ -114,7 +140,9 @@ async function syncSummonerData(summonerName, region = 'EUW', supabase) {
 
     if (playerError) {
       console.error('Error fetching player from database:', playerError);
-      throw new Error('Failed to fetch player from database');
+      if (playerError.code !== 'PGRST116') { // Not a "no rows" error
+        throw new Error('Failed to fetch player from database');
+      }
     }
 
     const playerId = existingPlayer?.id; // Ensure player_id is correctly used
@@ -163,16 +191,10 @@ async function syncSummonerData(summonerName, region = 'EUW', supabase) {
 async function syncMatchHistory(summonerName, region, supabase) {
   try {
     // Step 1: Get summoner data by name
-    const summonerResponse = await fetch(
-      `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`,
-      { headers: { 'X-Riot-Token': RIOT_API_KEY } }
-    );
-    
-    if (!summonerResponse.ok) {
-      throw new Error(`Failed to fetch summoner data: ${summonerResponse.status} ${summonerResponse.statusText}`);
+    const summonerData = await fetchSummonerDataFromRiotApi(summonerName, region);
+    if (!summonerData) {
+      throw new Error(`Summoner ${summonerName} not found on ${region} server.`);
     }
-    
-    const summonerData = await summonerResponse.json();
     
     // Step 2: Get the player ID from our database
     const { data: player, error: playerError } = await supabase
@@ -394,119 +416,68 @@ async function updatePlayerStats(playerId, supabase) {
     }
 
     console.log('Player stats updated successfully for playerId:', playerId);
+    return true;
   } catch (error) {
     console.error('Error in updatePlayerStats:', error);
     throw error;
   }
 }
 
-async function populatePlayerStats(playerId, summonerName, supabase) {
+async function populatePlayerStats(playerId, summonerName, region, supabase) {
   try {
     console.log(`Populating stats for playerId: ${playerId}, summonerName: ${summonerName}`);
 
-    // Fetch matches and stats from Riot API
-    const riotResponse = await fetchRiotApiData(summonerName);
-    if (!riotResponse) throw new Error('Failed to fetch data from Riot API');
-
-    const { matches, stats } = riotResponse;
-
-    console.log('Fetched matches and stats from Riot API:', { matches, stats });
-
-    // Calculate player stats
-    const totalMatches = matches.length;
-    const wins = matches.filter(m => m.result === 'win').length;
-    const losses = totalMatches - wins;
-    const totalKills = matches.reduce((sum, match) => sum + match.kills, 0);
-    const totalDeaths = matches.reduce((sum, match) => sum + match.deaths, 0);
-    const totalAssists = matches.reduce((sum, match) => sum + match.assists, 0);
-    const totalCs = matches.reduce((sum, match) => sum + match.cs, 0);
-    const totalDuration = matches.reduce((sum, match) => sum + match.duration, 0);
-
-    const avgKills = totalMatches > 0 ? parseFloat((totalKills / totalMatches).toFixed(1)) : null;
-    const avgDeaths = totalMatches > 0 ? parseFloat((totalDeaths / totalMatches).toFixed(1)) : null;
-    const avgAssists = totalMatches > 0 ? parseFloat((totalAssists / totalMatches).toFixed(1)) : null;
-    const avgKDA = totalDeaths > 0 ? parseFloat(((totalKills + totalAssists) / totalDeaths).toFixed(2)) : null;
-    const avgCsPerMin = totalDuration > 0 ? parseFloat((totalCs / totalDuration).toFixed(1)) : null;
-
-    const playerStats = {
-      player_id: playerId,
-      win_rate: totalMatches > 0 ? (wins / totalMatches) * 100 : null,
-      avg_kills: avgKills,
-      avg_deaths: avgDeaths,
-      avg_assists: avgAssists,
-      avg_kda: avgKDA,
-      avg_cs_per_min: avgCsPerMin,
-      roles_played: stats.rolesPlayed,
-    };
-
-    console.log('Calculated player stats:', playerStats);
-
-    // Insert or update player stats in the database
-    const { data: existingStats, error: fetchError } = await supabase
+    // First sync summoner data
+    const summonerResponse = await syncSummonerData(summonerName, region, supabase);
+    if (!summonerResponse.ok) {
+      const errorData = await summonerResponse.json();
+      throw new Error(`Failed to sync summoner data: ${errorData.message}`);
+    }
+    
+    // Then sync match history
+    const matchesResponse = await syncMatchHistory(summonerName, region, supabase);
+    if (!matchesResponse.ok) {
+      const errorData = await matchesResponse.json();
+      throw new Error(`Failed to sync match history: ${errorData.message}`);
+    }
+    
+    // Check if stats were generated
+    const { data: stats, error: statsError } = await supabase
       .from('player_stats')
-      .select('id')
+      .select('*')
       .eq('player_id', playerId)
       .maybeSingle();
-
-    if (fetchError) {
-      console.error('Error fetching existing player stats:', fetchError);
-      throw fetchError;
+      
+    if (statsError && statsError.code !== 'PGRST116') {
+      throw statsError;
     }
-
-    if (existingStats) {
-      const { error: updateError } = await supabase
-        .from('player_stats')
-        .update(playerStats)
-        .eq('id', existingStats.id);
-
-      if (updateError) {
-        console.error('Error updating player stats:', updateError);
-        throw updateError;
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'Player stats populated successfully',
+        data: stats
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
-      console.log('Updated player stats successfully');
-    } else {
-      const { error: insertError } = await supabase
-        .from('player_stats')
-        .insert(playerStats);
-
-      if (insertError) {
-        console.error('Error inserting player stats:', insertError);
-        throw insertError;
-      }
-      console.log('Inserted player stats successfully');
-    }
+    );
   } catch (error) {
     console.error('Error in populatePlayerStats:', error);
-    throw error;
-  }
-}
-
-// Helper function to fetch data from Riot API
-async function fetchRiotApiData(summonerName) {
-  // Implementacja wywołania Riot API i przetwarzania danych
-  // ...existing code...
-}
-
-async function fetchSummonerDataFromRiotApi(summonerName, region) {
-  try {
-    const response = await fetch(
-      `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`,
-      { headers: { 'X-Riot-Token': RIOT_API_KEY } }
+    return new Response(
+      JSON.stringify({
+        success: false,
+        message: error.message || 'Failed to populate player stats'
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
     );
-
-    if (!response.ok) {
-      console.error(`Failed to fetch summoner data: ${response.status} ${response.statusText}`);
-      return null;
-    }
-
-    const summonerData = await response.json();
-    return summonerData;
-  } catch (error) {
-    console.error('Error fetching summoner data from Riot API:', error);
-    throw error;
   }
 }
 
+// Helper function to map Riot role to our app role
 function mapRiotRoleToAppRole(riotRole) {
   const roleMap = {
     'TOP': 'Top',

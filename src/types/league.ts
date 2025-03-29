@@ -1,10 +1,9 @@
-
 export interface Player {
   id: string;
   name: string;
   role: Role;
-  summonerName: string;
-  summonerId?: string;
+  summoner_name: string;
+  profile_image_url?: string;
   profileIconId?: number;
   tier?: string;
   rank?: string;
