@@ -41,19 +41,20 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     // Parse Riot ID format (name#tagLine)
     let apiEndpoint;
     let encodedName;
+    let isRiotId = summonerName.includes('#');
     
-    if (summonerName.includes('#')) {
+    if (isRiotId) {
       // Use Riot ID endpoint
       const [name, tagLine] = summonerName.split('#');
       encodedName = `${encodeURIComponent(name)}/${encodeURIComponent(tagLine)}`;
       apiEndpoint = `https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodedName}`;
+      console.log(`Using Riot ID API endpoint: ${apiEndpoint}`);
     } else {
       // Use legacy summoner name endpoint
       encodedName = encodeURIComponent(summonerName);
       apiEndpoint = `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
+      console.log(`Using legacy summoner name API endpoint: ${apiEndpoint}`);
     }
-    
-    console.log(`Calling Riot API at: ${apiEndpoint}`);
     
     // First, get account by Riot ID or summoner name
     const accountResponse = await fetch(
@@ -66,80 +67,138 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     );
 
     if (!accountResponse.ok) {
+      const errorText = await accountResponse.text();
       console.error(`API Error: ${accountResponse.status} ${accountResponse.statusText}`);
-      console.error(`Response body: ${await accountResponse.text()}`);
+      console.error(`Response body: ${errorText}`);
       throw new Error(`Failed to fetch summoner data: ${accountResponse.status} ${accountResponse.statusText}`);
     }
 
     const accountData = await accountResponse.json();
-    console.log("Account data:", accountData);
+    console.log("Account data:", JSON.stringify(accountData));
     
     // For Riot ID format, we need to get the PUUID and fetch summoner data
     let summonerId, summonerData;
     
-    if (summonerName.includes('#')) {
-      // Get summoner data using PUUID
-      const summonerByPuuidResponse = await fetch(
-        `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
+    if (isRiotId) {
+      // Get summoner data using PUUID from a specific region (EUN1 in this case)
+      // We need to try multiple regions since the account API doesn't specify which region the player is in
+      const regions = ["eun1", "euw1", "na1", "kr"];
+      let summonerByPuuidResponse = null;
+      let foundRegion = null;
+      
+      for (const region of regions) {
+        try {
+          console.log(`Trying to fetch summoner data from region: ${region} for PUUID: ${accountData.puuid}`);
+          const response = await fetch(
+            `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
+            {
+              headers: {
+                "X-Riot-Token": riotApiKey,
+              },
+            }
+          );
+          
+          if (response.ok) {
+            summonerByPuuidResponse = response;
+            foundRegion = region;
+            console.log(`Found summoner in region: ${foundRegion}`);
+            break;
+          } else {
+            console.log(`Summoner not found in region: ${region}, status: ${response.status}`);
+          }
+        } catch (err) {
+          console.error(`Error checking region ${region}:`, err);
+        }
+      }
+      
+      if (!summonerByPuuidResponse || !foundRegion) {
+        throw new Error(`Could not find summoner in any region for PUUID: ${accountData.puuid}`);
+      }
+      
+      summonerData = await summonerByPuuidResponse.json();
+      summonerId = summonerData.id;
+      
+      // Fetch ranked data from the found region
+      const rankedResponse = await fetch(
+        `https://${foundRegion}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
         {
           headers: {
             "X-Riot-Token": riotApiKey,
           },
         }
       );
-      
-      if (!summonerByPuuidResponse.ok) {
-        throw new Error(`Failed to fetch summoner by PUUID: ${summonerByPuuidResponse.status} ${summonerByPuuidResponse.statusText}`);
+
+      if (!rankedResponse.ok) {
+        throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
       }
-      
-      summonerData = await summonerByPuuidResponse.json();
-      summonerId = summonerData.id;
+
+      const rankedData = await rankedResponse.json();
+      console.log("Ranked data:", rankedData);
+
+      // Find solo queue ranked entry
+      const soloQueueEntry = rankedData.find(
+        (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
+      );
+
+      return {
+        summonerId: summonerId,
+        profileIconId: summonerData.profileIconId,
+        summonerLevel: summonerData.summonerLevel,
+        puuid: accountData.puuid,
+        region: foundRegion,
+        tier: soloQueueEntry?.tier || null,
+        rank: soloQueueEntry?.rank || null,
+        leaguePoints: soloQueueEntry?.leaguePoints || 0,
+        wins: soloQueueEntry?.wins || 0,
+        losses: soloQueueEntry?.losses || 0,
+      };
     } else {
       // For legacy, we already have the summoner data
       summonerData = accountData;
       summonerId = summonerData.id;
-    }
+      
+      // Fetch ranked data using the summoner ID from EUN1 (for legacy names)
+      const rankedResponse = await fetch(
+        `https://eun1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
+        {
+          headers: {
+            "X-Riot-Token": riotApiKey,
+          },
+        }
+      );
 
-    // Fetch ranked data using the summoner ID
-    const rankedResponse = await fetch(
-      `https://eun1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
-      {
-        headers: {
-          "X-Riot-Token": riotApiKey,
-        },
+      if (!rankedResponse.ok) {
+        throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
       }
-    );
 
-    if (!rankedResponse.ok) {
-      throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
+      const rankedData = await rankedResponse.json();
+      console.log("Ranked data:", rankedData);
+
+      // Find solo queue ranked entry
+      const soloQueueEntry = rankedData.find(
+        (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
+      );
+
+      return {
+        summonerId: summonerId,
+        profileIconId: summonerData.profileIconId,
+        summonerLevel: summonerData.summonerLevel,
+        puuid: summonerData.puuid,
+        region: "eun1", // Default for legacy summoner name
+        tier: soloQueueEntry?.tier || null,
+        rank: soloQueueEntry?.rank || null,
+        leaguePoints: soloQueueEntry?.leaguePoints || 0,
+        wins: soloQueueEntry?.wins || 0,
+        losses: soloQueueEntry?.losses || 0,
+      };
     }
-
-    const rankedData = await rankedResponse.json();
-    console.log("Ranked data:", rankedData);
-
-    // Find solo queue ranked entry
-    const soloQueueEntry = rankedData.find(
-      (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
-    );
-
-    return {
-      summonerId: summonerId,
-      profileIconId: summonerData.profileIconId,
-      summonerLevel: summonerData.summonerLevel,
-      puuid: summonerData.puuid || accountData.puuid,
-      tier: soloQueueEntry?.tier || null,
-      rank: soloQueueEntry?.rank || null,
-      leaguePoints: soloQueueEntry?.leaguePoints || 0,
-      wins: soloQueueEntry?.wins || 0,
-      losses: soloQueueEntry?.losses || 0,
-    };
   } catch (error) {
     console.error("Error fetching data from Riot API:", error);
     throw error;
   }
 }
 
-// Function to populatedPlayerStats
+// Function to populate player stats
 async function populatePlayerStats(playerId: string, summonerName: string) {
   try {
     // 1. Fetch player's existing data
@@ -421,6 +480,7 @@ async function importCsvData(csvData: string) {
               name: player.name,
               role: player.role,
               summoner_name: player.summoner_name,
+              profile_image_url: null
             });
           
           if (insertError) {

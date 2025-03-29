@@ -1,288 +1,162 @@
 
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { syncWithRiotApi, importCsvData } from '@/services/leagueApi';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, FileSpreadsheet, Loader2, RefreshCw, UserCog } from 'lucide-react';
-import PlayerEditForm from '@/components/PlayerEditForm';
-import PlayerSelector from '@/components/PlayerSelector';
+import { importCsvData, syncWithRiotApi } from '@/services/leagueApi';
+import { PlayerSelector } from '@/components/PlayerSelector';
+import { toast } from 'sonner';
 
-interface SyncFormData {
-  summonerName: string;
-}
-
-interface CsvFormData {
-  csvData: string;
-}
-
-const Admin = () => {
-  const { toast } = useToast();
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
-
-  const syncForm = useForm<SyncFormData>({
-    defaultValues: {
-      summonerName: '',
-    },
+export default function Admin() {
+  const [csvData, setCsvData] = useState('');
+  const [summonerName, setSummonerName] = useState('');
+  const [isLoading, setIsLoading] = useState({
+    importCsv: false,
+    syncPlayer: false
   });
-
-  const csvForm = useForm<CsvFormData>({
-    defaultValues: {
-      csvData: '',
-    },
-  });
-
-  const handleSyncSubmit = async (data: SyncFormData) => {
-    if (!data.summonerName) {
-      toast({
-        title: 'Błąd',
-        description: 'Wprowadź nazwę przywoływacza',
-        variant: 'destructive',
-      });
+  
+  const handleImportCsv = async () => {
+    if (!csvData.trim()) {
+      toast.error('Please enter CSV data');
       return;
     }
-
-    setIsSyncing(true);
+    
+    setIsLoading(prev => ({ ...prev, importCsv: true }));
+    
     try {
-      const result = await syncWithRiotApi(data.summonerName);
-      
-      if (result.success) {
-        toast({
-          title: 'Sukces',
-          description: 'Dane zostały zsynchronizowane z Riot API',
-        });
-        syncForm.reset();
-      } else {
-        toast({
-          title: 'Błąd',
-          description: result.message || 'Nie udało się zsynchronizować danych',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      toast({
-        title: 'Błąd',
-        description: error instanceof Error ? error.message : 'Wystąpił nieznany błąd',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleCsvSubmit = async (data: CsvFormData) => {
-    if (!data.csvData && !csvFile) {
-      toast({
-        title: 'Błąd',
-        description: 'Wprowadź dane CSV lub załącz plik',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsImporting(true);
-    try {
-      let csvData = data.csvData;
-      
-      // Jeśli załączono plik, odczytaj jego zawartość
-      if (csvFile) {
-        csvData = await readFileAsText(csvFile);
-      }
-      
       const result = await importCsvData(csvData);
-      
       if (result.success) {
-        toast({
-          title: 'Sukces',
-          description: 'Dane zostały zaimportowane',
-        });
-        csvForm.reset();
-        setCsvFile(null);
+        toast.success(result.message);
+        setCsvData('');
       } else {
-        toast({
-          title: 'Błąd',
-          description: result.message || 'Nie udało się zaimportować danych',
-          variant: 'destructive',
-        });
+        toast.error(result.message);
       }
     } catch (error) {
-      toast({
-        title: 'Błąd',
-        description: error instanceof Error ? error.message : 'Wystąpił nieznany błąd',
-        variant: 'destructive',
-      });
+      console.error('Error importing CSV data:', error);
+      toast.error('Failed to import CSV data');
     } finally {
-      setIsImporting(false);
+      setIsLoading(prev => ({ ...prev, importCsv: false }));
     }
   };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setCsvFile(e.target.files[0]);
+  
+  const handleSyncPlayer = async () => {
+    if (!summonerName.trim()) {
+      toast.error('Please enter a summoner name');
+      return;
+    }
+    
+    setIsLoading(prev => ({ ...prev, syncPlayer: true }));
+    
+    try {
+      const result = await syncWithRiotApi(summonerName);
+      if (result.success) {
+        toast.success(result.message);
+        setSummonerName('');
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      console.error('Error syncing player:', error);
+      toast.error('Failed to sync player data');
+    } finally {
+      setIsLoading(prev => ({ ...prev, syncPlayer: false }));
     }
   };
-
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
-
+  
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Panel Administracyjny</h1>
-        <p className="text-muted-foreground">
-          Zarządzaj danymi drużyny, synchronizuj z Riot API i importuj dane
-        </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
       </div>
-
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Uwaga</AlertTitle>
-        <AlertDescription>
-          Do korzystania z Riot API potrzebny jest klucz API. Upewnij się, że masz skonfigurowane
-          odpowiednie zmienne środowiskowe w Supabase.
-        </AlertDescription>
-      </Alert>
-
-      <Tabs defaultValue="players" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="players">Edycja graczy</TabsTrigger>
-          <TabsTrigger value="sync">Synchronizacja z Riot API</TabsTrigger>
-          <TabsTrigger value="import">Import danych</TabsTrigger>
+      
+      <Tabs defaultValue="players">
+        <TabsList>
+          <TabsTrigger value="players">Players</TabsTrigger>
+          <TabsTrigger value="import">Import CSV</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="players">
+        <TabsContent value="players" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Edycja graczy</CardTitle>
+              <CardTitle>Manage Players</CardTitle>
               <CardDescription>
-                Edytuj dane graczy, dodawaj zdjęcia profilowe i synchronizuj z Riot API
+                Edit player information or sync stats with Riot API
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <PlayerSelector 
-                onSelectPlayer={setSelectedPlayerId} 
-                selectedPlayerId={selectedPlayerId} 
-              />
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="player-select">Select Player to Edit</Label>
+                <PlayerSelector />
+              </div>
               
-              {selectedPlayerId ? (
-                <PlayerEditForm 
-                  playerId={selectedPlayerId} 
-                  onSuccess={() => {
-                    // Refresh could be added here if needed
-                  }} 
-                />
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <UserCog className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Wybierz gracza z listy, aby edytować jego dane</p>
+              <div className="space-y-2">
+                <Label htmlFor="summoner-name">Add Player from Riot API</Label>
+                <div className="flex space-x-2">
+                  <Input 
+                    id="summoner-name"
+                    placeholder="Enter Summoner Name or Riot ID (name#tag)"
+                    value={summonerName}
+                    onChange={(e) => setSummonerName(e.target.value)}
+                  />
+                  <Button 
+                    onClick={handleSyncPlayer}
+                    disabled={isLoading.syncPlayer}
+                  >
+                    {isLoading.syncPlayer ? 'Syncing...' : 'Sync'}
+                  </Button>
                 </div>
-              )}
+                <p className="text-sm text-muted-foreground">
+                  For Riot ID format, use: name#tag (e.g., Riot#EUW)
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
         
-        <TabsContent value="sync">
+        <TabsContent value="import" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Synchronizacja z Riot API</CardTitle>
+              <CardTitle>Import Players from CSV</CardTitle>
               <CardDescription>
-                Pobierz najnowsze dane o graczu bezpośrednio z serwerów Riot Games
+                Bulk import players using CSV format
               </CardDescription>
             </CardHeader>
-            <form onSubmit={syncForm.handleSubmit(handleSyncSubmit)}>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="summonerName">Nazwa przywoływacza</Label>
-                  <Input
-                    id="summonerName"
-                    placeholder="Np. TheShy, Faker"
-                    {...syncForm.register('summonerName')}
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button type="submit" disabled={isSyncing}>
-                  {isSyncing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Synchronizacja...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" /> Synchronizuj
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="import">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import danych</CardTitle>
-              <CardDescription>
-                Importuj dane z pliku CSV lub wklej je bezpośrednio
-              </CardDescription>
-            </CardHeader>
-            <form onSubmit={csvForm.handleSubmit(handleCsvSubmit)}>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="csvFile">Plik CSV</Label>
-                  <Input
-                    id="csvFile"
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileChange}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Lub wklej dane CSV poniżej
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="csvData">Dane CSV</Label>
-                  <Textarea
-                    id="csvData"
-                    placeholder="id,name,role,summonerName,..."
-                    className="min-h-[200px]"
-                    {...csvForm.register('csvData')}
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button type="submit" disabled={isImporting}>
-                  {isImporting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importowanie...
-                    </>
-                  ) : (
-                    <>
-                      <FileSpreadsheet className="mr-2 h-4 w-4" /> Importuj
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
-            </form>
+            <CardContent className="space-y-4">
+              <Alert>
+                <AlertTitle>CSV Format</AlertTitle>
+                <AlertDescription>
+                  Use the format: <code>name,role,summoner_name</code><br />
+                  Example: <code>TheShy,Top,TheShy#KR1</code>
+                </AlertDescription>
+              </Alert>
+              
+              <div className="space-y-2">
+                <Label htmlFor="csv-input">CSV Data</Label>
+                <Textarea 
+                  id="csv-input"
+                  placeholder="name,role,summoner_name
+TheShy,Top,TheShy#KR1
+Faker,Mid,Faker#KR1"
+                  rows={10}
+                  value={csvData}
+                  onChange={(e) => setCsvData(e.target.value)}
+                />
+              </div>
+              
+              <Button 
+                onClick={handleImportCsv}
+                disabled={isLoading.importCsv}
+              >
+                {isLoading.importCsv ? 'Importing...' : 'Import'}
+              </Button>
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
     </div>
   );
-};
-
-export default Admin;
+}
