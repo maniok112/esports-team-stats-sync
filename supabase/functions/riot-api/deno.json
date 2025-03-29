@@ -1,6 +1,5 @@
-// filepath: d:\fms-stats\supabase\functions\riot-api\deno.json
+
 {
-  "importMap": "../../import_map.json",
   "tasks": {
     "start": "deno run --allow-net --allow-env index.ts"
   }

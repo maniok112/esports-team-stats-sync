@@ -1,8 +1,133 @@
-
 import { Player, Match, PlayerStats, TeamStats, ChampionStats, Role } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
 
-// Function to fetch team from Supabase
+export const syncWithRiotApi = async (summonerName: string): Promise<{ success: boolean, message?: string }> => {
+  try {
+    console.log(`Syncing data for summoner: ${summonerName}`);
+    
+    const { data, error } = await supabase.functions.invoke('riot-api', {
+      body: {
+        action: 'syncSummonerWithRiotApi',
+        summonerName,
+      },
+    });
+
+    if (error) {
+      console.error('Error invoking riot-api for syncWithRiotApi:', error);
+      return { success: false, message: error.message };
+    }
+
+    if (!data?.success) {
+      console.error('Riot API syncWithRiotApi failed:', data?.message);
+      return { success: false, message: data?.message || 'Failed to sync with Riot API' };
+    }
+
+    console.log('Successfully synced with Riot API:', data);
+    return { success: true, message: data.message };
+  } catch (error) {
+    console.error('Error in syncWithRiotApi:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'An unknown error occurred' 
+    };
+  }
+};
+
+export const importCsvData = async (csvData: string): Promise<{ success: boolean, message?: string }> => {
+  try {
+    console.log('Importing CSV data');
+    
+    const { data, error } = await supabase.functions.invoke('riot-api', {
+      body: {
+        action: 'importCsvData',
+        csvData,
+      },
+    });
+
+    if (error) {
+      console.error('Error invoking riot-api for importCsvData:', error);
+      return { success: false, message: error.message };
+    }
+
+    if (!data?.success) {
+      console.error('CSV import failed:', data?.message);
+      return { success: false, message: data?.message || 'Failed to import CSV data' };
+    }
+
+    console.log('Successfully imported CSV data:', data);
+    return { success: true, message: data.message };
+  } catch (error) {
+    console.error('Error in importCsvData:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'An unknown error occurred' 
+    };
+  }
+};
+
+export const syncPlayerStats = async (playerId: string, summonerName: string): Promise<void> => {
+  try {
+    console.log(`Syncing player stats for player_id: ${playerId}, summonerName: ${summonerName}`);
+    
+    const { data, error } = await supabase.functions.invoke('riot-api', {
+      body: {
+        action: 'populatePlayerStats',
+        playerId,
+        summonerName,
+      },
+    });
+
+    if (error) {
+      console.error('Error invoking riot-api for syncPlayerStats:', error);
+      throw error;
+    }
+
+    if (!data?.success) {
+      console.error('Riot API syncPlayerStats failed:', data?.message);
+      throw new Error(data?.message || 'Failed to sync player stats');
+    }
+
+    console.log('Player stats synced successfully:', data);
+  } catch (error) {
+    console.error('Error syncing player stats:', error);
+    throw error;
+  }
+};
+
+export const fetchPlayer = async (playerId: string): Promise<Player | undefined> => {
+  try {
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', playerId)
+      .single();
+    
+    if (error) throw error;
+    
+    // Convert database player to our Player type
+    const player: Player = {
+      id: data.id,
+      name: data.name,
+      role: data.role as Role,
+      summoner_name: data.summoner_name,
+      profile_image_url: data.profile_image_url,
+      profileIconId: data.profile_icon_id,
+      tier: data.tier,
+      rank: data.rank,
+      leaguePoints: data.league_points,
+      wins: data.wins,
+      losses: data.losses
+    };
+    
+    return player;
+  } catch (error) {
+    console.error(`Error fetching player ${playerId}:`, error);
+    
+    // Fallback to mock data if there's an error
+    return fallbackToMockPlayer(playerId);
+  }
+};
+
 export const fetchTeam = async (): Promise<TeamStats> => {
   try {
     // Fetch team stats
@@ -50,42 +175,6 @@ export const fetchTeam = async (): Promise<TeamStats> => {
   }
 };
 
-// Function to fetch a player from Supabase
-export const fetchPlayer = async (playerId: string): Promise<Player | undefined> => {
-  try {
-    const { data, error } = await supabase
-      .from('players')
-      .select('*')
-      .eq('id', playerId)
-      .single();
-    
-    if (error) throw error;
-    
-    // Convert database player to our Player type
-    const player: Player = {
-      id: data.id,
-      name: data.name,
-      role: data.role as Role,
-      summoner_name: data.summoner_name,
-      profile_image_url: data.profile_image_url,
-      profileIconId: data.profile_icon_id,
-      tier: data.tier,
-      rank: data.rank,
-      leaguePoints: data.league_points,
-      wins: data.wins,
-      losses: data.losses
-    };
-    
-    return player;
-  } catch (error) {
-    console.error(`Error fetching player ${playerId}:`, error);
-    
-    // Fallback to mock data if there's an error
-    return fallbackToMockPlayer(playerId);
-  }
-};
-
-// Function to fetch player stats from Supabase
 export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | null> => {
   try {
     console.log(`Fetching player stats for player_id: ${playerId}`);
@@ -143,7 +232,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
       timestamp: match.timestamp,
       champion: match.champion,
       championId: match.champion_id,
-      result: match.result,
+      result: match.result as 'win' | 'loss',
       kills: match.kills,
       deaths: match.deaths,
       assists: match.assists,
@@ -196,7 +285,6 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
   }
 };
 
-// Function to fetch all player stats for dashboard
 export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
   try {
     // First, get all players
@@ -236,7 +324,6 @@ export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>
   }
 };
 
-// Function to sync player stats
 export const syncPlayerStats = async (playerId: string, summonerName: string): Promise<void> => {
   try {
     console.log(`Syncing player stats for player_id: ${playerId}, summonerName: ${summonerName}`);
@@ -266,11 +353,6 @@ export const syncPlayerStats = async (playerId: string, summonerName: string): P
   }
 };
 
-// ---- Fallback functions for compatibility ----
-// Poniżej miejsce na funkcje fallbackowe, które używają symulowanych danych
-// w przypadku, gdy dane nie są jeszcze dostępne w Supabase
-
-// Simulated data for development, we'll replace with actual API calls later
 const MOCK_PLAYERS: Player[] = [
   { 
     id: '1',
@@ -354,7 +436,6 @@ function fallbackToMockPlayerStats(playerId: string): PlayerStats | null {
   return calculatePlayerStats(player, matches);
 }
 
-// Generate random matches for each player
 const generateMatches = (playerId: string): Match[] => {
   const champions = [
     { id: 266, name: 'Aatrox' },
@@ -405,7 +486,6 @@ const generateMatches = (playerId: string): Match[] => {
   return matches;
 };
 
-// Generate champion stats based on matches
 const generateChampionStats = (matches: Match[]): ChampionStats[] => {
   const champMap: Record<number, ChampionStats> = {};
   
@@ -438,7 +518,6 @@ const generateChampionStats = (matches: Match[]): ChampionStats[] => {
     stat.csPerMin += match.csPerMin;
   });
   
-  // Calculate averages
   Object.values(champMap).forEach(champ => {
     champ.winRate = parseFloat(((champ.wins / champ.games) * 100).toFixed(1));
     champ.kills = parseFloat((champ.kills / champ.games).toFixed(1));
@@ -454,12 +533,11 @@ const generateChampionStats = (matches: Match[]): ChampionStats[] => {
     .sort((a, b) => b.games - a.games);
 };
 
-// Calculate player stats based on matches
 const calculatePlayerStats = (player: Player, matches: Match[]): PlayerStats => {
   const totalMatches = matches.length;
   if (totalMatches === 0) {
     return {
-      summonerName: player.summonerName,
+      summonerName: player.summoner_name,
       tier: player.tier,
       rank: player.rank,
       leaguePoints: player.leaguePoints,
@@ -493,7 +571,7 @@ const calculatePlayerStats = (player: Player, matches: Match[]): PlayerStats => 
   const championStats = generateChampionStats(matches);
   
   return {
-    summonerName: player.summonerName,
+    summonerName: player.summoner_name,
     tier: player.tier,
     rank: player.rank,
     leaguePoints: player.leaguePoints,
