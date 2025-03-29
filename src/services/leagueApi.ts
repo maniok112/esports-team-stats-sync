@@ -1,4 +1,3 @@
-
 import { Player, Match, PlayerStats, TeamStats, ChampionStats, Role } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -264,8 +263,8 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     // Combine all data
     const playerStats: PlayerStats = {
       summonerName: statsData.summoner_name || "",
-      tier: statsData.tier || "",
-      rank: statsData.rank || "",
+      tier: statsData.tier || null,
+      rank: statsData.rank || null,
       leaguePoints: statsData.league_points || 0,
       wins: statsData.wins || 0,
       losses: statsData.losses || 0,
@@ -324,8 +323,6 @@ export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>
     return {};
   }
 };
-
-// Removed duplicate syncPlayerStats function
 
 const MOCK_PLAYERS: Player[] = [
   { 

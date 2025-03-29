@@ -21,12 +21,43 @@ function isValidRole(role: string): boolean {
   return validRoles.includes(role);
 }
 
+// Properly encode Riot ID for API requests
+function encodeRiotId(summonerName: string): string {
+  // If the summonerName contains a '#', we need to handle it specially
+  // Riot API uses URI component encoding for the tagline after the #
+  if (summonerName.includes('#')) {
+    const [name, tagLine] = summonerName.split('#');
+    return `${encodeURIComponent(name)}/${encodeURIComponent(tagLine)}`;
+  }
+  
+  return encodeURIComponent(summonerName);
+}
+
 // Function to fetch summoner data from Riot API
 async function fetchSummonerDataFromRiotApi(summonerName: string) {
   try {
-    // Fetch summoner data (includes profile icon, summoner level, etc.)
-    const summonerResponse = await fetch(
-      `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`,
+    console.log(`Attempting to fetch data for summoner: ${summonerName}`);
+    
+    // Parse Riot ID format (name#tagLine)
+    let apiEndpoint;
+    let encodedName;
+    
+    if (summonerName.includes('#')) {
+      // Use Riot ID endpoint
+      const [name, tagLine] = summonerName.split('#');
+      encodedName = `${encodeURIComponent(name)}/${encodeURIComponent(tagLine)}`;
+      apiEndpoint = `https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodedName}`;
+    } else {
+      // Use legacy summoner name endpoint
+      encodedName = encodeURIComponent(summonerName);
+      apiEndpoint = `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
+    }
+    
+    console.log(`Calling Riot API at: ${apiEndpoint}`);
+    
+    // First, get account by Riot ID or summoner name
+    const accountResponse = await fetch(
+      apiEndpoint,
       {
         headers: {
           "X-Riot-Token": riotApiKey,
@@ -34,16 +65,44 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
       }
     );
 
-    if (!summonerResponse.ok) {
-      throw new Error(`Failed to fetch summoner data: ${summonerResponse.status} ${summonerResponse.statusText}`);
+    if (!accountResponse.ok) {
+      console.error(`API Error: ${accountResponse.status} ${accountResponse.statusText}`);
+      console.error(`Response body: ${await accountResponse.text()}`);
+      throw new Error(`Failed to fetch summoner data: ${accountResponse.status} ${accountResponse.statusText}`);
     }
 
-    const summonerData = await summonerResponse.json();
-    console.log("Summoner data:", summonerData);
+    const accountData = await accountResponse.json();
+    console.log("Account data:", accountData);
+    
+    // For Riot ID format, we need to get the PUUID and fetch summoner data
+    let summonerId, summonerData;
+    
+    if (summonerName.includes('#')) {
+      // Get summoner data using PUUID
+      const summonerByPuuidResponse = await fetch(
+        `https://eun1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
+        {
+          headers: {
+            "X-Riot-Token": riotApiKey,
+          },
+        }
+      );
+      
+      if (!summonerByPuuidResponse.ok) {
+        throw new Error(`Failed to fetch summoner by PUUID: ${summonerByPuuidResponse.status} ${summonerByPuuidResponse.statusText}`);
+      }
+      
+      summonerData = await summonerByPuuidResponse.json();
+      summonerId = summonerData.id;
+    } else {
+      // For legacy, we already have the summoner data
+      summonerData = accountData;
+      summonerId = summonerData.id;
+    }
 
     // Fetch ranked data using the summoner ID
     const rankedResponse = await fetch(
-      `https://eun1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerData.id}`,
+      `https://eun1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
       {
         headers: {
           "X-Riot-Token": riotApiKey,
@@ -64,9 +123,10 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     );
 
     return {
-      summonerId: summonerData.id,
+      summonerId: summonerId,
       profileIconId: summonerData.profileIconId,
       summonerLevel: summonerData.summonerLevel,
+      puuid: summonerData.puuid || accountData.puuid,
       tier: soloQueueEntry?.tier || null,
       rank: soloQueueEntry?.rank || null,
       leaguePoints: soloQueueEntry?.leaguePoints || 0,
@@ -107,6 +167,7 @@ async function populatePlayerStats(playerId: string, summonerName: string) {
         league_points: riotData.leaguePoints,
         wins: riotData.wins,
         losses: riotData.losses,
+        profile_image_url: null, // Set to null if we don't have a custom one
       })
       .eq("id", playerId);
 
@@ -124,10 +185,15 @@ async function populatePlayerStats(playerId: string, summonerName: string) {
     // 5. Create or update player_stats
     const statsData = {
       player_id: playerId,
+      summoner_name: summonerName,
+      tier: riotData.tier,
+      rank: riotData.rank,
+      league_points: riotData.leaguePoints,
+      wins: riotData.wins,
+      losses: riotData.losses,
       win_rate: riotData.wins + riotData.losses > 0
         ? (riotData.wins / (riotData.wins + riotData.losses)) * 100
         : 0,
-      // We'll need to fetch match history to calculate these properly
       avg_kills: 0,
       avg_deaths: 0, 
       avg_assists: 0,

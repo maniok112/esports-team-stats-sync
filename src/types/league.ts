@@ -1,19 +1,19 @@
 
+export type Role = 'Top' | 'Jungle' | 'Mid' | 'ADC' | 'Support';
+
 export interface Player {
   id: string;
   name: string;
   role: Role;
   summoner_name: string;
-  profile_image_url?: string;
-  profileIconId?: number;
-  tier?: string;
-  rank?: string;
+  profile_image_url?: string | null;
+  profileIconId?: number | null;
+  tier?: string | null;
+  rank?: string | null;
   leaguePoints?: number;
   wins?: number;
   losses?: number;
 }
-
-export type Role = 'Top' | 'Jungle' | 'Mid' | 'ADC' | 'Support';
 
 export interface Match {
   id: string;
@@ -49,9 +49,9 @@ export interface ChampionStats {
 }
 
 export interface PlayerStats {
-  summonerName: string;
-  tier?: string;
-  rank?: string;
+  summonerName?: string;
+  tier?: string | null;
+  rank?: string | null;
   leaguePoints?: number;
   wins?: number;
   losses?: number;
@@ -63,13 +63,11 @@ export interface PlayerStats {
   avgCsPerMin?: number;
   recentMatches: Match[];
   championStats: ChampionStats[];
-  rolesPlayed?: Record<Role, number>;
 }
 
 export interface TeamStats {
   players: Player[];
-  matches?: Match[];
-  totalWins?: number;
-  totalLosses?: number;
-  winRate?: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
 }

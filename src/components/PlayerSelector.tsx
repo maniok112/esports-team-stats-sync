@@ -1,134 +1,83 @@
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/services/supabaseClient';
-import { Player } from '@/types/league';
-import { Loader2, UserPlus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { 
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger
-} from '@/components/ui/dialog';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { Player, Role } from '@/types/league';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-type PlayerSelectorProps = {
-  onSelectPlayer: (playerId: string) => void;
-  selectedPlayerId?: string;
-};
+const roleOrder: Role[] = ['Top', 'Jungle', 'Mid', 'ADC', 'Support'];
 
-const PlayerSelector = ({ onSelectPlayer, selectedPlayerId }: PlayerSelectorProps) => {
+export const PlayerSelector = () => {
   const [players, setPlayers] = useState<Player[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showNewPlayerDialog, setShowNewPlayerDialog] = useState(false);
-  
+  const [selectedPlayer, setSelectedPlayer] = useState<string>('');
+  const navigate = useNavigate();
+
   useEffect(() => {
     const fetchPlayers = async () => {
-      setIsLoading(true);
       try {
         const { data, error } = await supabase
           .from('players')
           .select('*')
-          .order('name');
+          .order('role');
+
+        if (error) {
+          throw error;
+        }
+
+        if (data) {
+          // Convert data to Player[] type
+          const typedPlayers: Player[] = data.map(player => ({
+            id: player.id,
+            name: player.name,
+            role: player.role as Role,
+            summoner_name: player.summoner_name,
+            profile_image_url: player.profile_image_url,
+            profileIconId: player.profile_icon_id,
+            tier: player.tier,
+            rank: player.rank,
+            leaguePoints: player.league_points,
+            wins: player.wins,
+            losses: player.losses
+          }));
           
-        if (error) throw error;
-        setPlayers(data || []);
+          // Sort by role according to roleOrder
+          typedPlayers.sort((a, b) => {
+            return roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role);
+          });
+          
+          setPlayers(typedPlayers);
+        }
       } catch (error) {
         console.error('Error fetching players:', error);
-      } finally {
-        setIsLoading(false);
       }
     };
-    
+
     fetchPlayers();
   }, []);
-  
-  // Find the currently selected player
-  const selectedPlayer = players.find(p => p.id === selectedPlayerId);
-  
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-2">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    );
-  }
-  
+
+  const handlePlayerChange = (playerId: string) => {
+    setSelectedPlayer(playerId);
+    navigate(`/player/${playerId}`);
+  };
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <Select 
-            value={selectedPlayerId} 
-            onValueChange={onSelectPlayer}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select player to edit">
-                {selectedPlayer && (
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage 
-                        src={selectedPlayer.profile_image_url || undefined} 
-                        alt={selectedPlayer.name} 
-                      />
-                      <AvatarFallback>{selectedPlayer.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <span>{selectedPlayer.name}</span>
-                  </div>
-                )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {players.map((player) => (
-                <SelectItem key={player.id} value={player.id} className="flex items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage 
-                        src={player.profile_image_url || undefined} 
-                        alt={player.name} 
-                      />
-                      <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <span>{player.name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        
-        <Dialog open={showNewPlayerDialog} onOpenChange={setShowNewPlayerDialog}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="icon">
-              <UserPlus className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add new player</DialogTitle>
-              <DialogDescription>
-                This functionality is not implemented yet. 
-                Please use the import feature in the main Admin panel.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button onClick={() => setShowNewPlayerDialog(false)}>Close</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </div>
+    <Select value={selectedPlayer} onValueChange={handlePlayerChange}>
+      <SelectTrigger className="w-[180px]">
+        <SelectValue placeholder="Select a player" />
+      </SelectTrigger>
+      <SelectContent>
+        {players.map((player) => (
+          <SelectItem key={player.id} value={player.id}>
+            {player.role}: {player.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 };
-
-export default PlayerSelector;
