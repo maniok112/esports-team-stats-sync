@@ -151,17 +151,17 @@ const PlayerProfile = () => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard 
               title="Win Rate" 
-              value={`${stats.win_rate?.toFixed(1) || 0}%`}
+              value={`${stats.winRate?.toFixed(1) || 0}%`}
               icon={<Award size={18} />}
             />
             <StatCard 
               title="KDA Ratio" 
-              value={(stats.avg_kda || 0).toFixed(2)}
+              value={(stats.avgKDA || 0).toFixed(2)}
               icon={<Swords size={18} />}
             />
             <StatCard 
               title="Avg. CS per min" 
-              value={(stats.avg_cs_per_min || 0).toFixed(1)}
+              value={(stats.avgCsPerMin || 0).toFixed(1)}
               icon={<Target size={18} />}
             />
             <StatCard 

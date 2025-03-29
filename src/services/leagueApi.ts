@@ -1,3 +1,4 @@
+
 import { Player, Match, PlayerStats, TeamStats, ChampionStats, Role } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -262,18 +263,18 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
 
     // Combine all data
     const playerStats: PlayerStats = {
-      summonerName: statsData.summoner_name,
-      tier: statsData.tier,
-      rank: statsData.rank,
-      leaguePoints: statsData.league_points,
-      wins: statsData.wins,
-      losses: statsData.losses,
-      winRate: statsData.win_rate,
-      avgKills: statsData.avg_kills,
-      avgDeaths: statsData.avg_deaths,
-      avgAssists: statsData.avg_assists,
-      avgKDA: statsData.avg_kda,
-      avgCsPerMin: statsData.avg_cs_per_min,
+      summonerName: statsData.summoner_name || "",
+      tier: statsData.tier || "",
+      rank: statsData.rank || "",
+      leaguePoints: statsData.league_points || 0,
+      wins: statsData.wins || 0,
+      losses: statsData.losses || 0,
+      winRate: statsData.win_rate || 0,
+      avgKills: statsData.avg_kills || 0,
+      avgDeaths: statsData.avg_deaths || 0,
+      avgAssists: statsData.avg_assists || 0,
+      avgKDA: statsData.avg_kda || 0,
+      avgCsPerMin: statsData.avg_cs_per_min || 0,
       recentMatches: matches,
       championStats: championStats
     };
@@ -324,34 +325,7 @@ export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>
   }
 };
 
-export const syncPlayerStats = async (playerId: string, summonerName: string): Promise<void> => {
-  try {
-    console.log(`Syncing player stats for player_id: ${playerId}, summonerName: ${summonerName}`);
-    
-    const { data, error } = await supabase.functions.invoke('riot-api', {
-      body: {
-        action: 'populatePlayerStats',
-        playerId,
-        summonerName,
-      },
-    });
-
-    if (error) {
-      console.error('Error invoking riot-api for syncPlayerStats:', error);
-      throw error;
-    }
-
-    if (!data?.success) {
-      console.error('Riot API syncPlayerStats failed:', data?.message);
-      throw new Error(data?.message || 'Failed to sync player stats');
-    }
-
-    console.log('Player stats synced successfully:', data);
-  } catch (error) {
-    console.error('Error syncing player stats:', error);
-    throw error;
-  }
-};
+// Removed duplicate syncPlayerStats function
 
 const MOCK_PLAYERS: Player[] = [
   { 

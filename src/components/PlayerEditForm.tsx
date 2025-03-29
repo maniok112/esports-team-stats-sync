@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
 import { toast } from 'sonner';
 import { Player, Role } from '@/types/league';
 import { supabase } from '@/services/supabaseClient';
+import { syncPlayerStats } from '@/services/leagueApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -63,10 +65,25 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
         if (error) throw error;
 
         if (data) {
-          setPlayer(data);
+          // Convert to Player type
+          const playerData: Player = {
+            id: data.id,
+            name: data.name,
+            role: data.role as Role,
+            summoner_name: data.summoner_name,
+            profile_image_url: data.profile_image_url,
+            profileIconId: data.profile_icon_id,
+            tier: data.tier,
+            rank: data.rank,
+            leaguePoints: data.league_points,
+            wins: data.wins,
+            losses: data.losses
+          };
+          
+          setPlayer(playerData);
           form.reset({
             name: data.name,
-            role: data.role,
+            role: data.role as Role,
             summoner_name: data.summoner_name || '',
           });
 
@@ -183,15 +200,10 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
         }
 
         // Get public URL for the uploaded image
-        const { data: urlData, error: urlError } = supabase
+        const { data: urlData } = supabase
           .storage
           .from('players')
           .getPublicUrl(filePath);
-
-        if (urlError) {
-          console.error('Public URL Error:', urlError); // Log URL error
-          throw urlError;
-        }
 
         if (urlData?.publicUrl) {
           const { error: imageUpdateError } = await supabase
