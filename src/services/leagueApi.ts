@@ -1,4 +1,5 @@
-import { Player, Match, PlayerStats, TeamStats, ChampionStats } from '../types/league';
+
+import { Player, Match, PlayerStats, TeamStats, ChampionStats, Role } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
 
 // Function to fetch team from Supabase
@@ -20,8 +21,23 @@ export const fetchTeam = async (): Promise<TeamStats> => {
     
     if (playersError) throw playersError;
     
+    // Convert the database role strings to our Role type
+    const typedPlayers: Player[] = playersData?.map(player => ({
+      id: player.id,
+      name: player.name,
+      role: player.role as Role,
+      summoner_name: player.summoner_name,
+      profile_image_url: player.profile_image_url,
+      profileIconId: player.profile_icon_id,
+      tier: player.tier,
+      rank: player.rank,
+      leaguePoints: player.league_points,
+      wins: player.wins,
+      losses: player.losses
+    })) || [];
+    
     return {
-      players: playersData || [],
+      players: typedPlayers,
       totalWins: teamData?.total_wins || 0,
       totalLosses: teamData?.total_losses || 0,
       winRate: teamData?.win_rate || 0
@@ -44,7 +60,23 @@ export const fetchPlayer = async (playerId: string): Promise<Player | undefined>
       .single();
     
     if (error) throw error;
-    return data;
+    
+    // Convert database player to our Player type
+    const player: Player = {
+      id: data.id,
+      name: data.name,
+      role: data.role as Role,
+      summoner_name: data.summoner_name,
+      profile_image_url: data.profile_image_url,
+      profileIconId: data.profile_icon_id,
+      tier: data.tier,
+      rank: data.rank,
+      leaguePoints: data.league_points,
+      wins: data.wins,
+      losses: data.losses
+    };
+    
+    return player;
   } catch (error) {
     console.error(`Error fetching player ${playerId}:`, error);
     
@@ -80,7 +112,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     }
 
     // Get recent matches
-    const { data: matches, error: matchesError } = await supabase
+    const { data: matchesData, error: matchesError } = await supabase
       .from('matches')
       .select('*')
       .eq('player_id', playerId)
@@ -93,7 +125,7 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
     }
 
     // Get champion stats
-    const { data: championStats, error: championStatsError } = await supabase
+    const { data: championData, error: championStatsError } = await supabase
       .from('champion_stats')
       .select('*')
       .eq('player_id', playerId)
@@ -104,17 +136,103 @@ export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | 
       throw championStatsError;
     }
 
+    // Convert database matches to our Match type
+    const matches: Match[] = matchesData?.map(match => ({
+      id: match.id,
+      gameId: match.game_id,
+      timestamp: match.timestamp,
+      champion: match.champion,
+      championId: match.champion_id,
+      result: match.result,
+      kills: match.kills,
+      deaths: match.deaths,
+      assists: match.assists,
+      kda: match.kda,
+      cs: match.cs,
+      csPerMin: match.cs_per_min,
+      vision: match.vision,
+      gold: match.gold,
+      duration: match.duration,
+      role: match.role as Role
+    })) || [];
+
+    // Convert database champion stats to our ChampionStats type
+    const championStats: ChampionStats[] = championData?.map(champ => ({
+      championId: champ.champion_id,
+      championName: champ.champion_name,
+      games: champ.games,
+      wins: champ.wins,
+      losses: champ.losses,
+      winRate: champ.win_rate,
+      kills: champ.kills,
+      deaths: champ.deaths,
+      assists: champ.assists,
+      kda: champ.kda,
+      csPerMin: champ.cs_per_min
+    })) || [];
+
     // Combine all data
     const playerStats: PlayerStats = {
-      ...statsData,
-      recentMatches: matches || [],
-      championStats: championStats || []
+      summonerName: statsData.summoner_name,
+      tier: statsData.tier,
+      rank: statsData.rank,
+      leaguePoints: statsData.league_points,
+      wins: statsData.wins,
+      losses: statsData.losses,
+      winRate: statsData.win_rate,
+      avgKills: statsData.avg_kills,
+      avgDeaths: statsData.avg_deaths,
+      avgAssists: statsData.avg_assists,
+      avgKDA: statsData.avg_kda,
+      avgCsPerMin: statsData.avg_cs_per_min,
+      recentMatches: matches,
+      championStats: championStats
     };
 
     return playerStats;
   } catch (error) {
     console.error(`Unhandled error fetching player stats for player_id: ${playerId}`, error);
     return null;
+  }
+};
+
+// Function to fetch all player stats for dashboard
+export const fetchAllPlayerStats = async (): Promise<Record<string, PlayerStats>> => {
+  try {
+    // First, get all players
+    const { data: players, error: playersError } = await supabase
+      .from('players')
+      .select('id, summoner_name');
+    
+    if (playersError) throw playersError;
+    
+    if (!players || players.length === 0) {
+      console.log('No players found');
+      return {};
+    }
+    
+    // Create a map to store player stats by ID
+    const playerStatsMap: Record<string, PlayerStats> = {};
+    
+    // Fetch stats for each player in parallel
+    await Promise.all(
+      players.map(async (player) => {
+        try {
+          const stats = await fetchPlayerStats(player.id);
+          if (stats) {
+            playerStatsMap[player.id] = stats;
+          }
+        } catch (error) {
+          console.error(`Error fetching stats for player ${player.id}:`, error);
+          // Continue with other players if one fails
+        }
+      })
+    );
+    
+    return playerStatsMap;
+  } catch (error) {
+    console.error('Error fetching all player stats:', error);
+    return {};
   }
 };
 
@@ -158,7 +276,7 @@ const MOCK_PLAYERS: Player[] = [
     id: '1',
     name: 'TheShy',
     role: 'Top',
-    summonerName: 'TheShy',
+    summoner_name: 'TheShy',
     profileIconId: 3546,
     tier: 'CHALLENGER',
     rank: 'I',
@@ -170,7 +288,7 @@ const MOCK_PLAYERS: Player[] = [
     id: '2',
     name: 'Canyon',
     role: 'Jungle',
-    summonerName: 'Canyon',
+    summoner_name: 'Canyon',
     profileIconId: 5205,
     tier: 'GRANDMASTER',
     rank: 'I',
@@ -182,7 +300,7 @@ const MOCK_PLAYERS: Player[] = [
     id: '3',
     name: 'Faker',
     role: 'Mid',
-    summonerName: 'Faker',
+    summoner_name: 'Faker',
     profileIconId: 6,
     tier: 'CHALLENGER',
     rank: 'I',
@@ -194,7 +312,7 @@ const MOCK_PLAYERS: Player[] = [
     id: '4',
     name: 'Ruler',
     role: 'ADC',
-    summonerName: 'Ruler',
+    summoner_name: 'Ruler',
     profileIconId: 4567,
     tier: 'CHALLENGER',
     rank: 'I',
@@ -206,7 +324,7 @@ const MOCK_PLAYERS: Player[] = [
     id: '5',
     name: 'Keria',
     role: 'Support',
-    summonerName: 'Keria',
+    summoner_name: 'Keria',
     profileIconId: 4822,
     tier: 'CHALLENGER',
     rank: 'I',
