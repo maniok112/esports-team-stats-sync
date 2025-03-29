@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
@@ -23,7 +22,7 @@ import { Loader2, Save, User, Upload } from 'lucide-react';
 type PlayerFormValues = {
   name: string;
   role: Role;
-  summonerName: string;
+  summoner_name: string;
   profileImage?: File | null;
 };
 
@@ -44,16 +43,17 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
     defaultValues: {
       name: '',
       role: 'Top',
-      summonerName: '',
+      summoner_name: '',
       profileImage: null
     }
   });
 
-  // Fetch player data
+  // Fetch player data and sync stats
   useEffect(() => {
-    const fetchPlayer = async () => {
+    const fetchAndSyncPlayer = async () => {
       setIsLoading(true);
       try {
+        // Fetch player data
         const { data, error } = await supabase
           .from('players')
           .select('*')
@@ -67,19 +67,25 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
           form.reset({
             name: data.name,
             role: data.role,
-            summonerName: data.summonerName || '',
+            summoner_name: data.summoner_name || '',
           });
 
           // If player has a profile image URL
           if (data.profile_image_url) {
             setImagePreviewUrl(data.profile_image_url);
           }
+
+          // Automatically sync player stats
+          if (data.summoner_name) {
+            console.log(`Auto-syncing stats for player_id: ${data.id}, summoner_name: ${data.summoner_name}`);
+            await syncPlayerStats(data.id, data.summoner_name);
+          }
         }
       } catch (error) {
-        console.error('Error fetching player:', error);
+        console.error('Error fetching or syncing player:', error);
         toast({
           title: 'Error',
-          description: 'Failed to load player data.',
+          description: 'Failed to load or sync player data.',
           variant: 'destructive',
         });
       } finally {
@@ -88,7 +94,7 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
     };
 
     if (playerId) {
-      fetchPlayer();
+      fetchAndSyncPlayer();
     }
   }, [playerId, form, toast]);
 
@@ -110,20 +116,25 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
   const onSubmit = async (values: PlayerFormValues) => {
     setIsLoading(true);
     try {
-      // Create an update object
+      // Validate updateData
       const updateData = {
         name: values.name,
         role: values.role,
-        summonerName: values.summonerName
+        summoner_name: values.summoner_name,
       };
 
+      console.log('Update Data:', updateData); // Debugging
+
       // Update player data
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('players')
         .update(updateData)
         .eq('id', playerId);
 
-      if (error) throw error;
+      if (updateError) {
+        console.error('Update Error:', updateError); // Log detailed error
+        throw updateError;
+      }
 
       // Handle profile image upload if provided
       if (values.profileImage) {
@@ -132,19 +143,29 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
         const fileName = `${playerId}-profile.${fileExt}`;
         const filePath = `players/${fileName}`;
 
-        // Check if storage bucket exists, create one if not
-        const { data: bucketData } = await supabase
+        // Check if storage bucket exists
+        const { data: bucketData, error: bucketError } = await supabase
           .storage
           .getBucket('players');
 
+        if (bucketError) {
+          console.error('Bucket Error:', bucketError); // Log bucket error
+          throw bucketError;
+        }
+
         if (!bucketData) {
           // Create bucket
-          await supabase
+          const { error: createBucketError } = await supabase
             .storage
             .createBucket('players', {
               public: true,
-              fileSizeLimit: 1024 * 1024 * 2 // 2MB limit
+              fileSizeLimit: 1024 * 1024 * 2, // 2MB limit
             });
+
+          if (createBucketError) {
+            console.error('Create Bucket Error:', createBucketError); // Log error
+            throw createBucketError;
+          }
         }
 
         // Upload file
@@ -153,37 +174,48 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
           .from('players')
           .upload(filePath, file, {
             upsert: true,
-            contentType: file.type
+            contentType: file.type,
           });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error('Upload Error:', uploadError); // Log upload error
+          throw uploadError;
+        }
 
         // Get public URL for the uploaded image
-        const { data: urlData } = supabase
+        const { data: urlData, error: urlError } = supabase
           .storage
           .from('players')
           .getPublicUrl(filePath);
 
-        // Update player with image URL
+        if (urlError) {
+          console.error('Public URL Error:', urlError); // Log URL error
+          throw urlError;
+        }
+
         if (urlData?.publicUrl) {
-          await supabase
+          const { error: imageUpdateError } = await supabase
             .from('players')
             .update({
-              profile_image_url: urlData.publicUrl
+              profile_image_url: urlData.publicUrl,
             })
             .eq('id', playerId);
+
+          if (imageUpdateError) {
+            console.error('Image Update Error:', imageUpdateError); // Log error
+            throw imageUpdateError;
+          }
         }
       }
 
       // Sync with Riot API if summoner name is provided
-      if (values.summonerName && player?.summonerName !== values.summonerName) {
+      if (values.summoner_name && player?.summoner_name !== values.summoner_name) {
         toast({
           title: 'Syncing with Riot API',
-          description: `Now syncing data for ${values.summonerName}...`,
+          description: `Now syncing data for ${values.summoner_name}...`,
         });
-        
-        // We'll handle this in a separate function
-        await syncWithRiotApi(values.summonerName);
+
+        await syncWithRiotApi(values.summoner_name);
       }
 
       toast({
@@ -195,7 +227,7 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
         onSuccess();
       }
     } catch (error) {
-      console.error('Error updating player:', error);
+      console.error('Error updating player:', error); // Log detailed error
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to update player.',
@@ -206,13 +238,13 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
     }
   };
 
-  const syncWithRiotApi = async (summonerName: string) => {
+  const syncWithRiotApi = async (summoner_name: string) => {
     try {
       // Invoke Supabase edge function for Riot API sync
       const { data, error } = await supabase.functions.invoke('riot-api', {
         body: { 
           action: 'syncSummoner',
-          summonerName
+          summonerName: summoner_name
         }
       });
       
@@ -229,7 +261,7 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
       await supabase.functions.invoke('riot-api', {
         body: { 
           action: 'syncMatches',
-          summonerName
+          summonerName: summoner_name
         }
       });
       
@@ -238,6 +270,25 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
       toast({
         title: 'Sync Error',
         description: error instanceof Error ? error.message : 'Failed to sync with Riot API',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSyncStats = async () => {
+    if (!player) return;
+    try {
+      console.log(`Syncing stats for player_id: ${player.id}, summoner_name: ${player.summoner_name}`);
+      await syncPlayerStats(player.id, player.summoner_name); // Use player.id for database queries
+      toast({
+        title: 'Sync Complete',
+        description: 'Player stats synced successfully.',
+      });
+    } catch (error) {
+      console.error('Error syncing player stats:', error); // Log detailed error
+      toast({
+        title: 'Sync Error',
+        description: error instanceof Error ? error.message : 'Failed to sync player stats.',
         variant: 'destructive',
       });
     }
@@ -331,7 +382,7 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
                 
                 <FormField
                   control={form.control}
-                  name="summonerName"
+                  name="summoner_name"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Summoner Name</FormLabel>
@@ -358,6 +409,9 @@ const PlayerEditForm = ({ playerId, onSuccess }: PlayerEditFormProps) => {
                   Save Changes
                 </>
               )}
+            </Button>
+            <Button onClick={handleSyncStats} disabled={isLoading}>
+              Sync Stats
             </Button>
           </CardFooter>
         </form>

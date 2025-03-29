@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -39,7 +38,7 @@ const PlayerProfile = () => {
   
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['playerStats', playerId],
-    queryFn: () => fetchPlayerStats(playerId || ''),
+    queryFn: () => fetchPlayerStats(playerId || ''), // Wywołanie z poprawioną funkcją
     enabled: !!playerId
   });
   
@@ -62,7 +61,11 @@ const PlayerProfile = () => {
   }
   
   if (!player || !stats) {
-    return <div>Player not found</div>;
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <p>Brak statystyk dla wybranego gracza. Spróbuj zsynchronizować dane z Riot API.</p>
+      </div>
+    );
   }
   
   return (

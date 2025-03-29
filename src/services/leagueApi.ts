@@ -1,6 +1,8 @@
 import { Player, Match, PlayerStats, TeamStats } from '../types/league';
 import { supabase } from '@/integrations/supabase/client';
 
+const RIOT_API_KEY = 'RGAPI-4b4aaede-7f1a-4f0d-94c4-14e561b15a41';
+
 // Function to fetch team from Supabase
 export const fetchTeam = async (): Promise<TeamStats> => {
   try {
@@ -54,67 +56,32 @@ export const fetchPlayer = async (playerId: string): Promise<Player | undefined>
 };
 
 // Function to fetch player stats from Supabase
-export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | undefined> => {
+export const fetchPlayerStats = async (playerId: string): Promise<PlayerStats | null> => {
   try {
-    // Fetch basic stats
-    const { data: statsData, error: statsError } = await supabase
+    const { data: statsData, error: statsError, status } = await supabase
       .from('player_stats')
       .select('*')
       .eq('player_id', playerId)
-      .single();
-    
-    if (statsError) throw statsError;
-    
-    // Fetch player info
-    const { data: playerData, error: playerError } = await supabase
-      .from('players')
-      .select('*')
-      .eq('id', playerId)
-      .single();
-    
-    if (playerError) throw playerError;
-    
-    // Fetch recent matches
-    const { data: matchesData, error: matchesError } = await supabase
-      .from('matches')
-      .select('*')
-      .eq('player_id', playerId)
-      .order('timestamp', { ascending: false })
-      .limit(15);
-    
-    if (matchesError) throw matchesError;
-    
-    // Fetch champion stats
-    const { data: championsData, error: championsError } = await supabase
-      .from('champion_stats')
-      .select('*')
-      .eq('player_id', playerId)
-      .order('games', { ascending: false });
-    
-    if (championsError) throw championsError;
-    
-    return {
-      summonerName: playerData.summoner_name,
-      tier: playerData.tier,
-      rank: playerData.rank,
-      leaguePoints: playerData.league_points,
-      wins: playerData.wins,
-      losses: playerData.losses,
-      winRate: statsData?.win_rate,
-      avgKills: statsData?.avg_kills,
-      avgDeaths: statsData?.avg_deaths,
-      avgAssists: statsData?.avg_assists,
-      avgKDA: statsData?.avg_kda,
-      avgCsPerMin: statsData?.avg_cs_per_min,
-      recentMatches: matchesData || [],
-      championStats: championsData || [],
-      rolesPlayed: statsData?.roles_played
-    };
+      .maybeSingle();
+
+    if (statsError) {
+      console.error(`Error fetching player stats for player_id: ${playerId}`, statsError);
+      if (status === 406) {
+        console.error(`RLS policy issue or no rows found for player_stats with player_id: ${playerId}`);
+        return null;
+      }
+      throw statsError;
+    }
+
+    if (!statsData) {
+      console.warn(`No rows found for player_stats with player_id: ${playerId}`);
+      return null;
+    }
+
+    return statsData;
   } catch (error) {
-    console.error(`Error fetching player stats for ${playerId}:`, error);
-    
-    // Fallback to mock data if there's an error
-    return fallbackToMockPlayerStats(playerId);
+    console.error(`Unhandled error fetching player stats for player_id: ${playerId}`, error);
+    return null;
   }
 };
 
@@ -154,7 +121,8 @@ export const syncWithRiotApi = async (summonerName: string): Promise<{ success: 
     const summonerResponse = await supabase.functions.invoke('riot-api', {
       body: { 
         action: 'syncSummoner',
-        summonerName
+        summonerName,
+        apiKey: RIOT_API_KEY
       }
     });
     
@@ -166,7 +134,8 @@ export const syncWithRiotApi = async (summonerName: string): Promise<{ success: 
     const matchesResponse = await supabase.functions.invoke('riot-api', {
       body: { 
         action: 'syncMatches',
-        summonerName
+        summonerName,
+        apiKey: RIOT_API_KEY
       }
     });
     
@@ -184,6 +153,35 @@ export const syncWithRiotApi = async (summonerName: string): Promise<{ success: 
       success: false, 
       message: error instanceof Error ? error.message : 'Unknown error occurred'
     };
+  }
+};
+
+// Function to sync player stats
+export const syncPlayerStats = async (playerId: string, summonerName: string): Promise<void> => {
+  try {
+    console.log(`Invoking syncPlayerStats for playerId: ${playerId}, summonerName: ${summonerName}`);
+    const { data, error } = await supabase.functions.invoke('riot-api', {
+      body: {
+        action: 'populatePlayerStats',
+        playerId,
+        summonerName,
+      },
+    });
+
+    if (error) {
+      console.error('Error invoking riot-api for syncPlayerStats:', error);
+      throw error;
+    }
+
+    if (!data?.success) {
+      console.error('Riot API syncPlayerStats failed:', data?.message);
+      throw new Error(data?.message || 'Failed to sync player stats');
+    }
+
+    console.log('Player stats synced successfully:', data);
+  } catch (error) {
+    console.error('Error syncing player stats:', error);
+    throw error;
   }
 };
 
@@ -233,13 +231,12 @@ export const importCsvData = async (csvData: string): Promise<{ success: boolean
 };
 
 // ---- Fallback functions for compatibility ----
-
 // Poniżej miejsce na funkcje fallbackowe, które używają symulowanych danych
 // w przypadku, gdy dane nie są jeszcze dostępne w Supabase
 
 // Simulated data for development, we'll replace with actual API calls later
 const MOCK_PLAYERS: Player[] = [
-  {
+  { 
     id: '1',
     name: 'TheShy',
     role: 'Top',
@@ -251,7 +248,7 @@ const MOCK_PLAYERS: Player[] = [
     wins: 120,
     losses: 75
   },
-  {
+  { 
     id: '2',
     name: 'Canyon',
     role: 'Jungle',
@@ -263,7 +260,7 @@ const MOCK_PLAYERS: Player[] = [
     wins: 110,
     losses: 90
   },
-  {
+  { 
     id: '3',
     name: 'Faker',
     role: 'Mid',
@@ -275,7 +272,7 @@ const MOCK_PLAYERS: Player[] = [
     wins: 180,
     losses: 105
   },
-  {
+  { 
     id: '4',
     name: 'Ruler',
     role: 'ADC',
@@ -287,7 +284,7 @@ const MOCK_PLAYERS: Player[] = [
     wins: 130,
     losses: 85
   },
-  {
+  { 
     id: '5',
     name: 'Keria',
     role: 'Support',
@@ -316,7 +313,6 @@ function fallbackToMockPlayer(playerId: string): Player | undefined {
 function fallbackToMockPlayerStats(playerId: string): PlayerStats | undefined {
   const player = MOCK_PLAYERS.find(p => p.id === playerId);
   if (!player) return undefined;
-  
   const matches = generateMatches(playerId);
   return calculatePlayerStats(player, matches);
 }
@@ -328,7 +324,6 @@ function fallbackToMockAllPlayerStats(): Record<string, PlayerStats> {
     const matches = generateMatches(player.id);
     result[player.id] = calculatePlayerStats(player, matches);
   }
-  
   return result;
 }
 
@@ -380,7 +375,6 @@ const generateMatches = (playerId: string): Match[] => {
       duration
     });
   }
-  
   return matches;
 };
 
@@ -404,16 +398,13 @@ const generateChampionStats = (matches: Match[]): ChampionStats[] => {
         csPerMin: 0
       };
     }
-    
     const stat = champMap[match.championId];
     stat.games += 1;
-    
     if (match.result === 'win') {
       stat.wins += 1;
     } else {
       stat.losses += 1;
     }
-    
     stat.kills += match.kills;
     stat.deaths += match.deaths;
     stat.assists += match.assists;
