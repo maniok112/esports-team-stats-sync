@@ -1,0 +1,5 @@
+[functions]
+  runtime = "deno"
+
+[functions.riot-api]
+  path = "functions/riot-api"
