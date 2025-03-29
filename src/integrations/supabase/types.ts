@@ -154,10 +154,16 @@ export type Database = {
           avg_kills: number | null
           created_at: string | null
           id: string
+          league_points: number | null
+          losses: number | null
           player_id: string | null
+          rank: string | null
           roles_played: Json | null
+          summoner_name: string | null
+          tier: string | null
           updated_at: string | null
           win_rate: number | null
+          wins: number | null
         }
         Insert: {
           avg_assists?: number | null
@@ -167,10 +173,16 @@ export type Database = {
           avg_kills?: number | null
           created_at?: string | null
           id?: string
+          league_points?: number | null
+          losses?: number | null
           player_id?: string | null
+          rank?: string | null
           roles_played?: Json | null
+          summoner_name?: string | null
+          tier?: string | null
           updated_at?: string | null
           win_rate?: number | null
+          wins?: number | null
         }
         Update: {
           avg_assists?: number | null
@@ -180,10 +192,16 @@ export type Database = {
           avg_kills?: number | null
           created_at?: string | null
           id?: string
+          league_points?: number | null
+          losses?: number | null
           player_id?: string | null
+          rank?: string | null
           roles_played?: Json | null
+          summoner_name?: string | null
+          tier?: string | null
           updated_at?: string | null
           win_rate?: number | null
+          wins?: number | null
         }
         Relationships: [
           {
@@ -203,6 +221,7 @@ export type Database = {
           losses: number | null
           name: string
           profile_icon_id: number | null
+          profile_image_url: string | null
           rank: string | null
           role: string
           summoner_id: string | null
@@ -218,6 +237,7 @@ export type Database = {
           losses?: number | null
           name: string
           profile_icon_id?: number | null
+          profile_image_url?: string | null
           rank?: string | null
           role: string
           summoner_id?: string | null
@@ -233,6 +253,7 @@ export type Database = {
           losses?: number | null
           name?: string
           profile_icon_id?: number | null
+          profile_image_url?: string | null
           rank?: string | null
           role?: string
           summoner_id?: string | null

@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.14.0";
 
@@ -32,7 +31,7 @@ function encodeRiotId(summonerName: string): string {
   return encodeURIComponent(summonerName);
 }
 
-// Function to fetch summoner data from Riot API
+// Update the fetchSummonerDataFromRiotApi function to only use EUW1 region
 async function fetchSummonerDataFromRiotApi(summonerName: string) {
   try {
     console.log(`Attempting to fetch data for summoner: ${summonerName}`);
@@ -41,6 +40,7 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     let apiEndpoint;
     let encodedName;
     let isRiotId = summonerName.includes('#');
+    const region = "euw1"; // Force EUW1 region
     
     if (isRiotId) {
       // Use Riot ID endpoint
@@ -51,7 +51,7 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     } else {
       // Use legacy summoner name endpoint (only for EUW1)
       encodedName = encodeURIComponent(summonerName);
-      apiEndpoint = `https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
+      apiEndpoint = `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/${encodedName}`;
       console.log(`Using legacy summoner name API endpoint: ${apiEndpoint}`);
     }
     
@@ -80,8 +80,6 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
     
     if (isRiotId) {
       // Get summoner data using PUUID from EUW1 region only
-      const region = "euw1";
-      
       console.log(`Trying to fetch summoner data from region: ${region} for PUUID: ${accountData.puuid}`);
       const response = await fetch(
         `https://${region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`,
@@ -101,81 +99,46 @@ async function fetchSummonerDataFromRiotApi(summonerName: string) {
       
       summonerData = await response.json();
       summonerId = summonerData.id;
-      
-      // Fetch ranked data from the found region
-      const rankedResponse = await fetch(
-        `https://${region}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
-        {
-          headers: {
-            "X-Riot-Token": riotApiKey,
-          },
-        }
-      );
-
-      if (!rankedResponse.ok) {
-        throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
-      }
-
-      const rankedData = await rankedResponse.json();
-      console.log("Ranked data:", rankedData);
-
-      // Find solo queue ranked entry
-      const soloQueueEntry = rankedData.find(
-        (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
-      );
-
-      return {
-        summonerId: summonerId,
-        profileIconId: summonerData.profileIconId,
-        summonerLevel: summonerData.summonerLevel,
-        puuid: accountData.puuid,
-        region: region,
-        tier: soloQueueEntry?.tier || null,
-        rank: soloQueueEntry?.rank || null,
-        leaguePoints: soloQueueEntry?.leaguePoints || 0,
-        wins: soloQueueEntry?.wins || 0,
-        losses: soloQueueEntry?.losses || 0,
-      };
     } else {
       // For legacy, we already have the summoner data
       summonerData = accountData;
       summonerId = summonerData.id;
-      
-      // Fetch ranked data using the summoner ID from EUW1 (for legacy names)
-      const rankedResponse = await fetch(
-        `https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
-        {
-          headers: {
-            "X-Riot-Token": riotApiKey,
-          },
-        }
-      );
-
-      if (!rankedResponse.ok) {
-        throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
-      }
-
-      const rankedData = await rankedResponse.json();
-      console.log("Ranked data:", rankedData);
-
-      // Find solo queue ranked entry
-      const soloQueueEntry = rankedData.find(
-        (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
-      );
-
-      return {
-        summonerId: summonerId,
-        profileIconId: summonerData.profileIconId,
-        summonerLevel: summonerData.summonerLevel,
-        puuid: summonerData.puuid,
-        region: "euw1", // Default for legacy summoner name
-        tier: soloQueueEntry?.tier || null,
-        rank: soloQueueEntry?.rank || null,
-        leaguePoints: soloQueueEntry?.leaguePoints || 0,
-        wins: soloQueueEntry?.wins || 0,
-        losses: soloQueueEntry?.losses || 0,
-      };
     }
+    
+    // Fetch ranked data using the summoner ID from EUW1
+    const rankedResponse = await fetch(
+      `https://${region}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
+      {
+        headers: {
+          "X-Riot-Token": riotApiKey,
+        },
+      }
+    );
+
+    if (!rankedResponse.ok) {
+      throw new Error(`Failed to fetch ranked data: ${rankedResponse.status} ${rankedResponse.statusText}`);
+    }
+
+    const rankedData = await rankedResponse.json();
+    console.log("Ranked data:", rankedData);
+
+    // Find solo queue ranked entry
+    const soloQueueEntry = rankedData.find(
+      (entry: any) => entry.queueType === "RANKED_SOLO_5x5"
+    );
+
+    return {
+      summonerId: summonerId,
+      profileIconId: summonerData.profileIconId,
+      summonerLevel: summonerData.summonerLevel,
+      puuid: isRiotId ? accountData.puuid : summonerData.puuid,
+      region: region,
+      tier: soloQueueEntry?.tier || null,
+      rank: soloQueueEntry?.rank || null,
+      leaguePoints: soloQueueEntry?.leaguePoints || 0,
+      wins: soloQueueEntry?.wins || 0,
+      losses: soloQueueEntry?.losses || 0,
+    };
   } catch (error) {
     console.error("Error fetching data from Riot API:", error);
     throw error;
@@ -209,8 +172,7 @@ async function populatePlayerStats(playerId: string, summonerName: string) {
         rank: riotData.rank,
         league_points: riotData.leaguePoints,
         wins: riotData.wins,
-        losses: riotData.losses,
-        profile_image_url: null, // Set to null if we don't have a custom one
+        losses: riotData.losses
       })
       .eq("id", playerId);
 
